@@ -86,22 +86,21 @@ jobs:
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      - name: Setup NSIS
-        uses: joncloud/action-setup-nsis@v2
-
-      - name: Ensure NSIS in PATH
+      - name: Install NSIS
         shell: pwsh
         run: |
-          if (Test-Path "C:\Program Files (x86)\NSIS") {
-            echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
+          choco install nsis -y --no-progress
+          $nsisDir = "C:\Program Files (x86)\NSIS"
+          if (-not (Test-Path "$nsisDir\makensis.exe")) {
+            $nsisDir = "C:\Program Files\NSIS"
           }
-          if (Test-Path "C:\Program Files\NSIS") {
-            echo "C:\Program Files\NSIS" >> $env:GITHUB_PATH
-          }
+          Write-Host "Configuring NSIS directory: $nsisDir"
+          "$nsisDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Verify NSIS
         shell: pwsh
-        run: makensis /VERSION
+        run: |
+          makensis /VERSION
 
       - name: Build Application with NSIS Installer
         run: wails build -platform windows/amd64 -nsis
