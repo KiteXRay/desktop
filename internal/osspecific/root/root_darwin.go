@@ -47,3 +47,7 @@ func GetPrivilegeFixCommand() (string, string) {
 func GrantPrivilegesViaPkexec() error {
 	return nil
 }
+
+func GrantPrivilegesAndRestart() error {
+	return nil
+}

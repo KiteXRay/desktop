@@ -4,7 +4,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-VERSION="${1:-1.0.0}"
+VERSION="${1:-1.0.1}"
 VERSION="${VERSION#v}" # remove leading 'v'
 ARCH="${2:-amd64}"
 
@@ -23,9 +23,11 @@ mkdir -p "$BUILD_DIR/usr/share/applications"
 mkdir -p "$BUILD_DIR/usr/share/icons/hicolor/512x512/apps"
 mkdir -p "$BUILD_DIR/usr/share/pixmaps"
 
-# 1. Copy binary & icon to /opt/kite
+# 1. Copy binary & icon & grant script to /opt/kite
 cp "$KITE_BIN" "$BUILD_DIR/opt/kite/kite"
 chmod 755 "$BUILD_DIR/opt/kite/kite"
+cp "$ROOT_DIR/scripts/grant_privileges.sh" "$BUILD_DIR/opt/kite/grant_privileges.sh"
+chmod 755 "$BUILD_DIR/opt/kite/grant_privileges.sh"
 cp "$ROOT_DIR/build/appicon.png" "$BUILD_DIR/opt/kite/kite.png"
 chmod 644 "$BUILD_DIR/opt/kite/kite.png"
 

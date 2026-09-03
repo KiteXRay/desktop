@@ -30,9 +30,14 @@ fi
 echo "==> Installing Kite to /opt/kite/..."
 mkdir -p /opt/kite
 
-# Copy binary
+# Copy binary and grant script
 cp "$KITE_BIN" /opt/kite/kite
 chmod 755 /opt/kite/kite
+
+if [ -f "$SCRIPT_DIR/grant_privileges.sh" ]; then
+    cp "$SCRIPT_DIR/grant_privileges.sh" /opt/kite/grant_privileges.sh
+    chmod 755 /opt/kite/grant_privileges.sh
+fi
 
 # Assign network capabilities
 echo "==> Assigning network capabilities (CAP_NET_ADMIN, CAP_NET_RAW, CAP_NET_BIND_SERVICE)..."
