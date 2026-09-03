@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -570,22 +571,75 @@ func (a *App) OpenURL(targetURL string) {
 	}
 }
 
-func pingTarget(address, port string, timeout time.Duration) int64 {
-	if address == "" || port == "" {
+func pingRoutedConnection(link string, timeout time.Duration) (latency int64) {
+	if link == "" {
 		return -1
 	}
-	target := net.JoinHostPort(address, port)
-	start := time.Now()
-	conn, err := net.DialTimeout("tcp", target, timeout)
+
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panic in pingRoutedConnection", "panic", r)
+			latency = -1
+		}
+	}()
+
+	coreService := xray3.NewXrayService(false, true)
+	proto, err := coreService.CreateProtocol(link)
 	if err != nil {
 		return -1
 	}
-	_ = conn.Close()
-	elapsed := time.Since(start).Milliseconds()
-	if elapsed <= 0 {
-		elapsed = 1
+
+	if err := proto.Parse(); err != nil {
+		return -1
 	}
-	return elapsed
+
+	client, instance, err := coreService.MakeHttpClient(proto, timeout)
+	if err != nil {
+		return -1
+	}
+	defer instance.Close()
+
+	start := time.Now()
+	// Test Cloudflare generate_204 through in-memory proxy
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://cp.cloudflare.com/generate_204", nil)
+	if err != nil {
+		return -1
+	}
+
+	resp, err := client.Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+		elapsed := time.Since(start).Milliseconds()
+		if elapsed <= 0 {
+			elapsed = 1
+		}
+		return elapsed
+	}
+
+	// Fallback to Google generate_204
+	startG := time.Now()
+	ctxG, cancelG := context.WithTimeout(context.Background(), timeout)
+	defer cancelG()
+
+	reqG, errG := http.NewRequestWithContext(ctxG, "GET", "http://www.google.com/generate_204", nil)
+	if errG != nil {
+		return -1
+	}
+
+	respG, errG := client.Do(reqG)
+	if errG == nil {
+		_ = respG.Body.Close()
+		elapsed := time.Since(startG).Milliseconds()
+		if elapsed <= 0 {
+			elapsed = 1
+		}
+		return elapsed
+	}
+
+	return -1
 }
 
 func (a *App) PingConnection(id string) int64 {
@@ -593,8 +647,7 @@ func (a *App) PingConnection(id string) int64 {
 	if item == nil {
 		return -1
 	}
-	cfg := item.XRayConfig()
-	res := pingTarget(cfg["Address"], cfg["Port"], 3*time.Second)
+	res := pingRoutedConnection(item.Link(), 6*time.Second)
 	if a.ctx != nil {
 		wruntime.EventsEmit(a.ctx, "ping:result", PingResultDTO{
 			ID:     id,
@@ -610,24 +663,23 @@ func (a *App) PingAll() map[string]int64 {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	sem := make(chan struct{}, 10)
+	// Test up to 5 proxies in parallel to avoid CPU/socket exhaustion
+	sem := make(chan struct{}, 5)
 
 	for _, itm := range allItems {
 		if itm == nil {
 			continue
 		}
 		id := itm.ID()
-		cfg := itm.XRayConfig()
-		addr := cfg["Address"]
-		port := cfg["Port"]
+		link := itm.Link()
 
 		wg.Add(1)
-		go func(connID, targetAddr, targetPort string) {
+		go func(connID, connLink string) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			latency := pingTarget(targetAddr, targetPort, 3*time.Second)
+			latency := pingRoutedConnection(connLink, 6*time.Second)
 
 			mu.Lock()
 			results[connID] = latency
@@ -639,7 +691,7 @@ func (a *App) PingAll() map[string]int64 {
 					PingMs: latency,
 				})
 			}
-		}(id, addr, port)
+		}(id, link)
 	}
 
 	wg.Wait()
