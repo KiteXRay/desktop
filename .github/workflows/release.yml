@@ -37,7 +37,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 
       - name: Build Application
-        run: wails build -tags webkit2_41
+        run: wails build -tags webkit2_41 -skipbindings
 
       - name: Package Release Archive
         run: |
@@ -103,7 +103,7 @@ jobs:
           makensis /VERSION
 
       - name: Build Application with NSIS Installer
-        run: wails build -platform windows/amd64 -nsis -s
+        run: wails build -platform windows/amd64 -nsis -skipbindings
 
       - name: Package Portable Zip
         shell: bash
@@ -144,7 +144,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 
       - name: Build Application
-        run: wails build -platform darwin/universal -s
+        run: wails build -platform darwin/universal -skipbindings
 
       - name: Package Release
         run: |
