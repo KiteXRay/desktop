@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -26,6 +27,7 @@ import (
 	"github.com/goxray/desktop/internal/osspecific/networkready"
 	"github.com/goxray/desktop/internal/osspecific/proxy"
 	"github.com/goxray/desktop/internal/sleepwatch"
+	"github.com/goxray/desktop/internal/updater"
 	xray3 "github.com/lilendian0x00/xray-knife/v3/pkg/xray"
 )
 
@@ -91,6 +93,8 @@ type App struct {
 	systemProxyOn  bool
 	sleepWatcher   *sleepwatch.Watcher
 	isReconnecting atomic.Bool
+	updateMu       sync.Mutex
+	isUpdating     bool
 }
 
 func NewApp() *App {
@@ -495,6 +499,106 @@ func (a *App) OpenURL(targetURL string) {
 	if a.ctx != nil {
 		wruntime.BrowserOpenURL(a.ctx, targetURL)
 	}
+}
+
+func (a *App) CheckForUpdate() (*updater.ReleaseInfo, error) {
+	appInfo := a.GetAppInfo()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	return updater.CheckForUpdate(ctx, appInfo.RepoURL, appInfo.Version)
+}
+
+func (a *App) InstallUpdate(assetURL, releaseURL string) error {
+	a.updateMu.Lock()
+	if a.isUpdating {
+		a.updateMu.Unlock()
+		return errors.New("update is already in progress")
+	}
+	a.isUpdating = true
+	a.updateMu.Unlock()
+
+	go func() {
+		defer func() {
+			a.updateMu.Lock()
+			a.isUpdating = false
+			a.updateMu.Unlock()
+		}()
+
+		if assetURL == "" {
+			assetURL = releaseURL
+		}
+
+		// If assetURL is not a downloadable file (or is the release webpage), open browser
+		if strings.HasPrefix(assetURL, "https://github.com/") && strings.Contains(assetURL, "/releases/tag/") {
+			if a.ctx != nil {
+				wruntime.BrowserOpenURL(a.ctx, releaseURL)
+			}
+			return
+		}
+
+		baseName := filepath.Base(assetURL)
+		if idx := strings.Index(baseName, "?"); idx != -1 {
+			baseName = baseName[:idx]
+		}
+		if baseName == "" || baseName == "." {
+			baseName = "kite-update"
+		}
+		destPath := filepath.Join(os.TempDir(), fmt.Sprintf("kite_%d_%s", time.Now().Unix(), baseName))
+
+		emitProgress := func(status string, pct float64, downloaded, total int64, errMsg string) {
+			if a.ctx != nil {
+				wruntime.EventsEmit(a.ctx, "update:progress", map[string]any{
+					"status":     status,
+					"percentage": pct,
+					"downloaded": downloaded,
+					"total":      total,
+					"error":      errMsg,
+				})
+			}
+		}
+
+		emitProgress("downloading", 0, 0, 0, "")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+
+		var lastEmit time.Time
+		err := updater.DownloadFile(ctx, assetURL, destPath, func(dl, tot int64) {
+			now := time.Now()
+			if now.Sub(lastEmit) > 100*time.Millisecond || dl == tot {
+				lastEmit = now
+				pct := float64(0)
+				if tot > 0 {
+					pct = float64(dl) / float64(tot) * 100
+				}
+				emitProgress("downloading", pct, dl, tot, "")
+			}
+		})
+
+		if err != nil {
+			slog.Error("Failed to download update", "error", err)
+			emitProgress("error", 0, 0, 0, err.Error())
+			return
+		}
+
+		emitProgress("applying", 100, 0, 0, "")
+
+		err = updater.ApplyDownloadedUpdate(destPath, releaseURL, func() {
+			_ = a.Disconnect()
+			_ = clean.ClearStuckNetwork()
+		})
+
+		if err != nil {
+			slog.Error("Failed to apply update", "error", err)
+			emitProgress("error", 0, 0, 0, err.Error())
+			return
+		}
+
+		emitProgress("completed", 100, 0, 0, "")
+	}()
+
+	return nil
 }
 
 func (a *App) ParseLinkPreview(link string) (map[string]string, error) {

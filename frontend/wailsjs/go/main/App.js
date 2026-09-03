@@ -14,6 +14,10 @@ export function BuildLinkFromConfig(arg1) {
   return window['go']['main']['App']['BuildLinkFromConfig'](arg1);
 }
 
+export function CheckForUpdate() {
+  return window['go']['main']['App']['CheckForUpdate']();
+}
+
 export function ClearStuckTun() {
   return window['go']['main']['App']['ClearStuckTun']();
 }
@@ -56,6 +60,10 @@ export function GetSystemProxyStatus() {
 
 export function GetTunnelMode() {
   return window['go']['main']['App']['GetTunnelMode']();
+}
+
+export function InstallUpdate(arg1, arg2) {
+  return window['go']['main']['App']['InstallUpdate'](arg1, arg2);
 }
 
 export function LaunchAndRouteApp(arg1, arg2) {

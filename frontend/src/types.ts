@@ -63,3 +63,24 @@ export interface InstalledApp {
   description?: string;
 }
 
+export interface ReleaseInfo {
+  available: boolean;
+  currentVersion: string;
+  latestVersion: string;
+  releaseTitle: string;
+  releaseNotes: string;
+  releaseUrl: string;
+  assetUrl: string;
+  assetName: string;
+  assetSize: number;
+}
+
+export interface UpdateProgress {
+  status: 'checking' | 'downloading' | 'applying' | 'completed' | 'error';
+  percentage: number;
+  downloaded: number;
+  total: number;
+  error?: string;
+}
+
+

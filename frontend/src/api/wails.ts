@@ -1,4 +1,4 @@
-import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp } from '../types';
+import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp, ReleaseInfo, UpdateProgress } from '../types';
 
 declare global {
   interface Window {
@@ -27,6 +27,8 @@ declare global {
           SetSystemProxy(enabled: boolean): Promise<void>;
           GetSystemProxyStatus(): Promise<boolean>;
           LaunchAppWithProxy(appName: string, targetPath: string): Promise<void>;
+          CheckForUpdate(): Promise<ReleaseInfo>;
+          InstallUpdate(assetUrl: string, releaseUrl: string): Promise<void>;
         };
       };
     };
@@ -242,6 +244,29 @@ export const api = {
   onProxyStatusChanged(callback: (active: boolean) => void): () => void {
     if (window.runtime?.EventsOn) {
       return window.runtime.EventsOn('proxy:status', callback);
+    }
+    return () => {};
+  },
+
+  async checkForUpdate(): Promise<ReleaseInfo | null> {
+    const app = getApp() as any;
+    if (app?.CheckForUpdate) {
+      return app.CheckForUpdate();
+    }
+    return null;
+  },
+
+  async installUpdate(assetUrl: string, releaseUrl: string): Promise<void> {
+    const app = getApp() as any;
+    if (app?.InstallUpdate) {
+      return app.InstallUpdate(assetUrl, releaseUrl);
+    }
+    window.open(releaseUrl, '_blank');
+  },
+
+  onUpdateProgress(callback: (progress: UpdateProgress) => void): () => void {
+    if (window.runtime?.EventsOn) {
+      return window.runtime.EventsOn('update:progress', callback);
     }
     return () => {};
   }

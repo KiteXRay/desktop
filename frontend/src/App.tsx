@@ -17,12 +17,13 @@ import {
   Rocket
 } from 'lucide-react';
 import { api } from './api/wails';
-import type { ConnectionDTO, TunnelMode, InstalledApp } from './types';
+import type { ConnectionDTO, TunnelMode, InstalledApp, ReleaseInfo, UpdateProgress } from './types';
 import { ProfileCard } from './components/ProfileCard';
 import { NetworkChart } from './components/NetworkChart';
 import { ConfigDetails } from './components/ConfigDetails';
 import { AddEditModal } from './components/AddEditModal';
 import { SelectAppModal } from './components/SelectAppModal';
+import { UpdateModal } from './components/UpdateModal';
 import { AboutView } from './components/AboutView';
 import { PerAppView } from './components/PerAppView';
 import { formatBytes } from './utils/formatters';
@@ -63,6 +64,9 @@ export function App() {
   const [targetConnForApp, setTargetConnForApp] = useState<string | null>(null);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<ReleaseInfo | null>(null);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
   const [lastActiveId, setLastActiveId] = useState<string | null>(() => {
     try {
       return localStorage.getItem('kite_last_active_id');
@@ -70,6 +74,37 @@ export function App() {
       return null;
     }
   });
+
+  useEffect(() => {
+    const unsubProgress = api.onUpdateProgress(prog => {
+      setUpdateProgress(prog);
+    });
+
+    const timer = setTimeout(async () => {
+      try {
+        const info = await api.checkForUpdate();
+        if (info && info.available) {
+          setUpdateInfo(info);
+          setIsUpdateModalOpen(true);
+        }
+      } catch (err) {
+        console.debug('Background update check:', err);
+      }
+    }, 2000);
+
+    return () => {
+      unsubProgress();
+      clearTimeout(timer);
+    };
+  }, []);
+
+  const handleInstallUpdate = async (assetUrl: string, releaseUrl: string) => {
+    try {
+      await api.installUpdate(assetUrl, releaseUrl);
+    } catch (err: any) {
+      showToast(`Update error: ${err?.message || err}`, 'error');
+    }
+  };
 
   useEffect(() => {
     api.getTunnelMode().then(m => setTunnelMode((m as TunnelMode) || 'system'));
@@ -418,7 +453,16 @@ export function App() {
       <main className="flex-1 overflow-hidden">
         {currentTab === 'about' ? (
           <div className="h-full overflow-y-auto">
-            <AboutView onResetTun={handleClearStuckTun} isResettingTun={isClearingTun} />
+            <AboutView
+              onResetTun={handleClearStuckTun}
+              isResettingTun={isClearingTun}
+              updateInfo={updateInfo}
+              updateProgress={updateProgress}
+              onTriggerUpdate={(info) => {
+                setUpdateInfo(info);
+                setIsUpdateModalOpen(true);
+              }}
+            />
           </div>
         ) : tunnelMode === 'per_app' ? (
           <div className="h-full overflow-y-auto">
@@ -667,6 +711,15 @@ export function App() {
         onSelectApp={handleAppSelected}
         onBrowseManual={handleBrowseManual}
         isLaunching={isLaunchingExe}
+      />
+
+      {/* Update Available Modal */}
+      <UpdateModal
+        isOpen={isUpdateModalOpen}
+        updateInfo={updateInfo}
+        progress={updateProgress}
+        onClose={() => setIsUpdateModalOpen(false)}
+        onInstall={handleInstallUpdate}
       />
     </div>
   );

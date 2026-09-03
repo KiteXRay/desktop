@@ -138,3 +138,36 @@ export namespace main {
 
 }
 
+export namespace updater {
+	
+	export class ReleaseInfo {
+	    available: boolean;
+	    currentVersion: string;
+	    latestVersion: string;
+	    releaseTitle: string;
+	    releaseNotes: string;
+	    releaseUrl: string;
+	    assetUrl: string;
+	    assetName: string;
+	    assetSize: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReleaseInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.available = source["available"];
+	        this.currentVersion = source["currentVersion"];
+	        this.latestVersion = source["latestVersion"];
+	        this.releaseTitle = source["releaseTitle"];
+	        this.releaseNotes = source["releaseNotes"];
+	        this.releaseUrl = source["releaseUrl"];
+	        this.assetUrl = source["assetUrl"];
+	        this.assetName = source["assetName"];
+	        this.assetSize = source["assetSize"];
+	    }
+	}
+
+}
+
