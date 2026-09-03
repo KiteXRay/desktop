@@ -1,0 +1,9 @@
+.idea
+.DS_Store
+*.swp
+*.log
+Kite.app
+build/bin/
+frontend/node_modules/
+frontend/dist/*
+!frontend/dist/.gitkeep
