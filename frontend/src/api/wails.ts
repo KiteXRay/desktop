@@ -1,4 +1,4 @@
-import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO } from '../types';
+import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO, PingResultDTO } from '../types';
 
 declare global {
   interface Window {
@@ -31,6 +31,8 @@ declare global {
           InstallUpdate(assetUrl: string, releaseUrl: string): Promise<void>;
           CheckNetworkPrivileges(): Promise<NetworkPrivilegesDTO>;
           GrantNetworkPrivileges(): Promise<boolean>;
+          PingConnection(id: string): Promise<number>;
+          PingAll(): Promise<Record<string, number>>;
         };
       };
     };
@@ -292,6 +294,29 @@ export const api = {
   onNetworkPrivilegesRequired(callback: (data: { error: string; command: string }) => void): () => void {
     if (window.runtime?.EventsOn) {
       return window.runtime.EventsOn('network:privileges_required', callback);
+    }
+    return () => {};
+  },
+
+  async pingConnection(id: string): Promise<number> {
+    const app = getApp() as any;
+    if (app?.PingConnection) {
+      return app.PingConnection(id);
+    }
+    return -1;
+  },
+
+  async pingAll(): Promise<Record<string, number>> {
+    const app = getApp() as any;
+    if (app?.PingAll) {
+      return app.PingAll();
+    }
+    return {};
+  },
+
+  onPingResult(callback: (res: PingResultDTO) => void): () => void {
+    if (window.runtime?.EventsOn) {
+      return window.runtime.EventsOn('ping:result', callback);
     }
     return () => {};
   }

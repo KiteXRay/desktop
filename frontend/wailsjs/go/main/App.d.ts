@@ -48,6 +48,10 @@ export function OpenURL(arg1:string):Promise<void>;
 
 export function ParseLinkPreview(arg1:string):Promise<Record<string, string>>;
 
+export function PingAll():Promise<Record<string, number>>;
+
+export function PingConnection(arg1:string):Promise<number>;
+
 export function Quit():Promise<void>;
 
 export function ReorderConnections(arg1:number,arg2:number):Promise<void>;

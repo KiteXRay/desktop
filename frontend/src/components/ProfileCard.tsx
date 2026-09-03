@@ -1,5 +1,5 @@
 import React from 'react';
-import { Power, ArrowUp, ArrowDown, Edit2, Trash2, Loader2, GripVertical, RotateCcw } from 'lucide-react';
+import { Power, ArrowUp, ArrowDown, Edit2, Trash2, Loader2, RotateCcw, Activity } from 'lucide-react';
 import type { ConnectionDTO } from '../types';
 import { ProtocolBadges } from './Badges';
 import { formatBytes } from '../utils/formatters';
@@ -13,6 +13,8 @@ interface ProfileCardProps {
   onEdit: () => void;
   onDelete: () => void;
   onResetTraffic: () => void;
+  onPing?: () => void;
+  isPinging?: boolean;
   onDragStart: (e: React.DragEvent, index: number) => void;
   onDragOver: (e: React.DragEvent, index: number) => void;
   onDrop: (e: React.DragEvent, index: number) => void;
@@ -32,6 +34,8 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
   onEdit,
   onDelete,
   onResetTraffic,
+  onPing,
+  isPinging,
   onDragStart,
   onDragOver,
   onDrop,
@@ -41,7 +45,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
   isConnecting,
   isDisconnecting,
 }) => {
-  const { active, label, address, port, protocol, tls, flow, network, security, bytesRead, bytesWritten, totalBytes } = connection;
+  const { active, label, address, port, protocol, tls, flow, network, security, bytesRead, bytesWritten, totalBytes, pingMs } = connection;
 
   return (
     <div
@@ -63,18 +67,9 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
           : 'bg-slate-900/40 border-slate-800/80 hover:bg-slate-900/60 hover:border-slate-700/80'
       }`}
     >
-      {/* Row 1: Drag handle, Status Dot, Title + IP, and Actions */}
+      {/* Row 1: Status Dot, Title, Ping & Connect Action */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          {/* Drag handle */}
-          <div
-            className="text-slate-600 group-hover:text-slate-400 cursor-grab active:cursor-grabbing transition-colors shrink-0"
-            title="Drag to reorder"
-            onClick={e => e.stopPropagation()}
-          >
-            <GripVertical className="w-3.5 h-3.5" />
-          </div>
-
           {/* Status Indicator Dot */}
           <div className="shrink-0 flex items-center justify-center">
             {isConnecting ? (
@@ -89,7 +84,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
             )}
           </div>
 
-          {/* Title + Status Badge (Connection name has full width without address crowding it) */}
+          {/* Title + Status Badge */}
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <h3 className="text-xs font-semibold text-slate-100 truncate" title={label}>
               {label}
@@ -110,8 +105,38 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
           </div>
         </div>
 
-        {/* Right actions: Connect button */}
+        {/* Right actions: Ping & Connect button */}
         <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+          <button
+            onClick={onPing}
+            disabled={isPinging}
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono transition-colors border cursor-pointer ${
+              isPinging
+                ? 'text-indigo-300 bg-indigo-950/40 border-indigo-700/50 animate-pulse'
+                : pingMs !== undefined && pingMs > 0
+                ? pingMs < 120
+                  ? 'text-emerald-400 bg-emerald-950/30 border-emerald-800/40 hover:bg-emerald-900/40'
+                  : pingMs < 250
+                  ? 'text-amber-400 bg-amber-950/30 border-amber-800/40 hover:bg-amber-900/40'
+                  : 'text-rose-400 bg-rose-950/30 border-rose-800/40 hover:bg-rose-900/40'
+                : pingMs === -1
+                ? 'text-rose-400 bg-rose-950/30 border-rose-800/40'
+                : 'text-slate-500 bg-slate-800/40 border-slate-700/40 hover:text-slate-300 hover:border-slate-600/50'
+            }`}
+            title={isPinging ? 'Pinging...' : 'Click to test latency'}
+          >
+            <Activity className={`w-2.5 h-2.5 ${isPinging ? 'animate-spin' : ''}`} />
+            <span>
+              {isPinging
+                ? '...'
+                : pingMs !== undefined && pingMs > 0
+                ? `${pingMs} ms`
+                : pingMs === -1
+                ? 'Timeout'
+                : '- ms'}
+            </span>
+          </button>
+
           <button
             onClick={onConnect}
             disabled={isConnecting || isDisconnecting}
@@ -152,7 +177,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
       </div>
 
       {/* Row 2: Address (left) & Traffic stats (right) */}
-      <div className="flex items-center justify-between gap-2 pl-6 mt-1 text-[11px] font-mono text-slate-400">
+      <div className="flex items-center justify-between gap-2 pl-[22px] mt-1 text-[11px] font-mono text-slate-400">
         <div className="truncate text-slate-400" title={address ? `${address}:${port}` : 'Local profile'}>
           {address ? `${address}:${port}` : 'Local profile'}
         </div>
@@ -174,7 +199,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
       </div>
 
       {/* Row 3: Protocol Tags (left) & Reset/Edit/Remove buttons (bottom right corner) */}
-      <div className="flex items-center justify-between gap-2 pl-6 mt-1.5">
+      <div className="flex items-center justify-between gap-2 pl-[22px] mt-1.5">
         <ProtocolBadges
           protocol={protocol}
           tls={tls}

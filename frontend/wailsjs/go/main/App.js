@@ -90,6 +90,14 @@ export function ParseLinkPreview(arg1) {
   return window['go']['main']['App']['ParseLinkPreview'](arg1);
 }
 
+export function PingAll() {
+  return window['go']['main']['App']['PingAll']();
+}
+
+export function PingConnection(arg1) {
+  return window['go']['main']['App']['PingConnection'](arg1);
+}
+
 export function Quit() {
   return window['go']['main']['App']['Quit']();
 }

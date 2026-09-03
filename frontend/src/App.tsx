@@ -6,7 +6,6 @@ import {
   Info,
   AlertCircle,
   CheckCircle2,
-  RefreshCw,
   Server,
   RotateCcw,
   Loader2,
@@ -78,6 +77,9 @@ export function App() {
 
   const [privilegeInfo, setPrivilegeInfo] = useState<NetworkPrivilegesDTO | null>(null);
   const [isPrivilegeModalOpen, setIsPrivilegeModalOpen] = useState(false);
+  const [pings, setPings] = useState<Record<string, number>>({});
+  const [pingingIds, setPingingIds] = useState<Record<string, boolean>>({});
+  const [isPingingAll, setIsPingingAll] = useState(false);
 
   useEffect(() => {
     // Check network privileges on startup
@@ -104,6 +106,11 @@ export function App() {
       setUpdateProgress(prog);
     });
 
+    const unsubPing = api.onPingResult(res => {
+      setPings(prev => ({ ...prev, [res.id]: res.pingMs }));
+      setPingingIds(prev => ({ ...prev, [res.id]: false }));
+    });
+
     const timer = setTimeout(async () => {
       try {
         const info = await api.checkForUpdate();
@@ -119,6 +126,7 @@ export function App() {
     return () => {
       unsubPrivs();
       unsubProgress();
+      unsubPing();
       clearTimeout(timer);
     };
   }, []);
@@ -210,6 +218,40 @@ export function App() {
     setTargetConnForApp(connId);
     setIsSelectAppModalOpen(true);
   };
+
+  const handlePing = useCallback(async (id: string) => {
+    setPingingIds(prev => ({ ...prev, [id]: true }));
+    try {
+      const ms = await api.pingConnection(id);
+      setPings(prev => ({ ...prev, [id]: ms }));
+    } catch (err) {
+      console.error('Failed to ping:', err);
+      setPings(prev => ({ ...prev, [id]: -1 }));
+    } finally {
+      setPingingIds(prev => ({ ...prev, [id]: false }));
+    }
+  }, []);
+
+  const handlePingAll = useCallback(async () => {
+    if (isPingingAll || connections.length === 0) return;
+    setIsPingingAll(true);
+    const newPinging: Record<string, boolean> = {};
+    connections.forEach(c => {
+      newPinging[c.id] = true;
+    });
+    setPingingIds(newPinging);
+
+    try {
+      const res = await api.pingAll();
+      setPings(prev => ({ ...prev, ...res }));
+    } catch (err) {
+      console.error('Failed to ping all:', err);
+      showToast('Failed to ping some profiles', 'error');
+    } finally {
+      setIsPingingAll(false);
+      setPingingIds({});
+    }
+  }, [connections, isPingingAll, showToast]);
 
   const handleAppSelected = async (app: InstalledApp) => {
     setIsSelectAppModalOpen(false);
@@ -549,24 +591,29 @@ export function App() {
                   Available Profiles ({connections.length})
                 </span>
                 <button
-                  onClick={loadConnections}
-                  className="p-1 rounded-md text-slate-500 hover:text-slate-300 transition-colors"
-                  title="Refresh list"
+                  onClick={handlePingAll}
+                  disabled={isPingingAll || connections.length === 0}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-300 hover:text-white bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 transition-all cursor-pointer disabled:opacity-50"
+                  title="Ping all profiles"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
+                  <Activity className={`w-3.5 h-3.5 text-indigo-400 ${isPingingAll ? 'animate-spin' : ''}`} />
+                  <span>{isPingingAll ? 'Pinging...' : 'Ping all'}</span>
                 </button>
               </div>
 
               {connections.map((item, idx) => {
                 const isCardActive = activeStats?.id === item.id && item.active;
-                const cardItem = isCardActive
-                  ? {
-                      ...item,
-                      bytesRead: activeStats.bytesRead,
-                      bytesWritten: activeStats.bytesWritten,
-                      totalBytes: activeStats.totalBytes ?? (activeStats.bytesRead + activeStats.bytesWritten),
-                    }
-                  : item;
+                const cardItem = {
+                  ...(isCardActive
+                    ? {
+                        ...item,
+                        bytesRead: activeStats.bytesRead,
+                        bytesWritten: activeStats.bytesWritten,
+                        totalBytes: activeStats.totalBytes ?? (activeStats.bytesRead + activeStats.bytesWritten),
+                      }
+                    : item),
+                  pingMs: pings[item.id],
+                };
                 return (
                   <ProfileCard
                     key={item.id}
@@ -581,6 +628,8 @@ export function App() {
                     }}
                     onDelete={() => handleDelete(item.id)}
                     onResetTraffic={() => handleResetTraffic(item.id)}
+                    onPing={() => handlePing(item.id)}
+                    isPinging={!!pingingIds[item.id] || isPingingAll}
                     onDragStart={handleDragStart}
                     onDragOver={handleDragOver}
                     onDrop={handleDrop}
@@ -623,41 +672,73 @@ export function App() {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => handleConnect(selectedConnection.id)}
-                      disabled={connectingId === selectedConnection.id || disconnectingId === selectedConnection.id}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all shadow-md ${
-                        connectingId === selectedConnection.id
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-wait'
-                          : disconnectingId === selectedConnection.id
-                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 cursor-wait'
-                          : selectedConnection.active
-                          ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 active:scale-95'
-                          : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 active:scale-95'
-                      }`}
-                    >
-                      {connectingId === selectedConnection.id ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-                          <span>Connecting...</span>
-                        </>
-                      ) : disconnectingId === selectedConnection.id ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin text-rose-400" />
-                          <span>Disconnecting...</span>
-                        </>
-                      ) : selectedConnection.active ? (
-                        <>
-                          <Power className="w-4 h-4" />
-                          <span>Disconnect</span>
-                        </>
-                      ) : (
-                        <>
-                          <Power className="w-4 h-4" />
-                          <span>Connect</span>
-                        </>
-                      )}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handlePing(selectedConnection.id)}
+                        disabled={!!pingingIds[selectedConnection.id] || isPingingAll}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-mono border cursor-pointer transition-all ${
+                          pingingIds[selectedConnection.id] || isPingingAll
+                            ? 'text-indigo-300 bg-indigo-950/40 border-indigo-700/50 animate-pulse'
+                            : pings[selectedConnection.id] !== undefined && pings[selectedConnection.id] > 0
+                            ? pings[selectedConnection.id] < 120
+                              ? 'text-emerald-400 bg-emerald-950/30 border-emerald-800/40 hover:bg-emerald-900/40'
+                              : pings[selectedConnection.id] < 250
+                              ? 'text-amber-400 bg-amber-950/30 border-amber-800/40 hover:bg-amber-900/40'
+                              : 'text-rose-400 bg-rose-950/30 border-rose-800/40 hover:bg-rose-900/40'
+                            : pings[selectedConnection.id] === -1
+                            ? 'text-rose-400 bg-rose-950/30 border-rose-800/40'
+                            : 'text-slate-400 bg-slate-800/60 border-slate-700 hover:text-white'
+                        }`}
+                        title="Ping server"
+                      >
+                        <Activity className={`w-3.5 h-3.5 ${pingingIds[selectedConnection.id] || isPingingAll ? 'animate-spin' : ''}`} />
+                        <span>
+                          {pingingIds[selectedConnection.id] || isPingingAll
+                            ? 'Pinging...'
+                            : pings[selectedConnection.id] !== undefined && pings[selectedConnection.id] > 0
+                            ? `${pings[selectedConnection.id]} ms`
+                            : pings[selectedConnection.id] === -1
+                            ? 'Timeout'
+                            : 'Ping'}
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => handleConnect(selectedConnection.id)}
+                        disabled={connectingId === selectedConnection.id || disconnectingId === selectedConnection.id}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all shadow-md ${
+                          connectingId === selectedConnection.id
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-wait'
+                            : disconnectingId === selectedConnection.id
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 cursor-wait'
+                            : selectedConnection.active
+                            ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 active:scale-95'
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 active:scale-95'
+                        }`}
+                      >
+                        {connectingId === selectedConnection.id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                            <span>Connecting...</span>
+                          </>
+                        ) : disconnectingId === selectedConnection.id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-rose-400" />
+                            <span>Disconnecting...</span>
+                          </>
+                        ) : selectedConnection.active ? (
+                          <>
+                            <Power className="w-4 h-4" />
+                            <span>Disconnect</span>
+                          </>
+                        ) : (
+                          <>
+                            <Power className="w-4 h-4" />
+                            <span>Connect</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   {/* Cumulative Profile Traffic Card */}

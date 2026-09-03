@@ -88,6 +88,11 @@ type NetworkPrivilegesDTO struct {
 	Error         string `json:"error,omitempty"`
 }
 
+type PingResultDTO struct {
+	ID     string `json:"id"`
+	PingMs int64  `json:"pingMs"`
+}
+
 type App struct {
 	ctx            context.Context
 	items          *connlist.Collection
@@ -563,6 +568,82 @@ func (a *App) OpenURL(targetURL string) {
 	if a.ctx != nil {
 		wruntime.BrowserOpenURL(a.ctx, targetURL)
 	}
+}
+
+func pingTarget(address, port string, timeout time.Duration) int64 {
+	if address == "" || port == "" {
+		return -1
+	}
+	target := net.JoinHostPort(address, port)
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", target, timeout)
+	if err != nil {
+		return -1
+	}
+	_ = conn.Close()
+	elapsed := time.Since(start).Milliseconds()
+	if elapsed <= 0 {
+		elapsed = 1
+	}
+	return elapsed
+}
+
+func (a *App) PingConnection(id string) int64 {
+	item := a.items.FindByID(id)
+	if item == nil {
+		return -1
+	}
+	cfg := item.XRayConfig()
+	res := pingTarget(cfg["Address"], cfg["Port"], 3*time.Second)
+	if a.ctx != nil {
+		wruntime.EventsEmit(a.ctx, "ping:result", PingResultDTO{
+			ID:     id,
+			PingMs: res,
+		})
+	}
+	return res
+}
+
+func (a *App) PingAll() map[string]int64 {
+	allItems := a.items.All()
+	results := make(map[string]int64)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	sem := make(chan struct{}, 10)
+
+	for _, itm := range allItems {
+		if itm == nil {
+			continue
+		}
+		id := itm.ID()
+		cfg := itm.XRayConfig()
+		addr := cfg["Address"]
+		port := cfg["Port"]
+
+		wg.Add(1)
+		go func(connID, targetAddr, targetPort string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			latency := pingTarget(targetAddr, targetPort, 3*time.Second)
+
+			mu.Lock()
+			results[connID] = latency
+			mu.Unlock()
+
+			if a.ctx != nil {
+				wruntime.EventsEmit(a.ctx, "ping:result", PingResultDTO{
+					ID:     connID,
+					PingMs: latency,
+				})
+			}
+		}(id, addr, port)
+	}
+
+	wg.Wait()
+	return results
 }
 
 func (a *App) CheckForUpdate() (*updater.ReleaseInfo, error) {

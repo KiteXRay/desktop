@@ -14,6 +14,12 @@ export interface ConnectionDTO {
   bytesRead: number;
   bytesWritten: number;
   totalBytes?: number;
+  pingMs?: number;
+}
+
+export interface PingResultDTO {
+  id: string;
+  pingMs: number;
 }
 
 export interface StatsDTO {
