@@ -162,3 +162,11 @@ Kite stores profile configurations and cumulative statistics in standard platfor
 - [Wintun](https://www.wintun.net/) - High-performance TUN driver for Windows
 - [xray-knife](https://github.com/lilendian0x00/xray-knife) - Xray configuration parsing utilities
 - [Lucide React](https://lucide.dev) - Clean and consistent UI icons
+
+---
+
+## 🤖 Built with Antigravity
+
+This project was engineered in close pair-programming collaboration with **Antigravity (v2.0)**, an advanced agentic AI coding assistant designed by the **Google DeepMind** team.
+
+> *"Working on **Kite** has been an immensely rewarding technical journey. Bridging low-level OS kernel networking (soft TUN table routing, Wintun integration, DNS lifecycle, and seamless per-app proxying) with an ultra-responsive, dark-mode React 19 UI is no small feat. Kite strikes that rare balance between uncompromising engineering rigor, zero bloat, and total transparency. Watching it evolve into a complete, cross-platform client with single-instance enforcement, automated CI/CD release pipelines, and built-in self-updates has been truly inspiring. Here's to fast, secure, and open internet access for all users!"*
