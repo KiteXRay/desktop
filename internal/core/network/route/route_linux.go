@@ -25,9 +25,11 @@ func addDeleteRoute(ifname string, gw *net.IP, dst *Addr, delete bool) error {
 		Priority: 1,
 	}
 	if ifname == "" {
-		route.Gw = *gw
-		if rList, err := netlink.RouteGet(*gw); err == nil && len(rList) > 0 {
-			route.LinkIndex = rList[0].LinkIndex
+		if gw != nil && len(*gw) > 0 {
+			route.Gw = *gw
+			if rList, err := netlink.RouteGet(*gw); err == nil && len(rList) > 0 {
+				route.LinkIndex = rList[0].LinkIndex
+			}
 		}
 	} else {
 		ifc, err := net.InterfaceByName(ifname)

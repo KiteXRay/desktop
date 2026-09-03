@@ -66,20 +66,26 @@ It delivers seamless, low-overhead system-wide and per-application tunneling acr
 
 ### Linux
 
-#### Option A: Binary Release
-1. Download `kite-linux-amd64.tar.gz` (or arm64) from [Releases](https://github.com/KiteXRay/desktop/releases).
-2. Extract the archive and grant network capabilities so Kite can configure the TUN interface without running as root:
+#### Option A: Debian / Ubuntu (.deb package - Recommended)
+1. Download `kite_<version>_amd64.deb` from [Releases](https://github.com/KiteXRay/desktop/releases).
+2. Install via apt or dpkg (automatically sets up `/opt/kite`, grants network capabilities, and adds the desktop icon):
    ```bash
-   sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip kite
-   ./kite
+   sudo dpkg -i kite_*_amd64.deb
    ```
 
-#### Option B: Debian / Ubuntu PPA
-```bash
-sudo add-apt-repository ppa:twdragon/xray
-sudo apt update
-sudo apt install kite-gui
-```
+#### Option B: Standalone Archive (Any Linux distribution)
+1. Download `kite-linux-amd64.tar.gz` from [Releases](https://github.com/KiteXRay/desktop/releases).
+2. Extract and run the included installer:
+   ```bash
+   tar -xzvf kite-linux-amd64.tar.gz
+   sudo ./install.sh
+   ```
+   *(Installs to `/opt/kite`, assigns `CAP_NET_ADMIN` capabilities, and registers the application menu entry).*
+
+3. Or run directly:
+   ```bash
+   sudo ./kite --install
+   ```
 
 ### macOS
 

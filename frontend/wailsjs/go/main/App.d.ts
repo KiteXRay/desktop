@@ -12,6 +12,8 @@ export function BuildLinkFromConfig(arg1:Record<string, string>):Promise<string>
 
 export function CheckForUpdate():Promise<updater.ReleaseInfo>;
 
+export function CheckNetworkPrivileges():Promise<main.NetworkPrivilegesDTO>;
+
 export function ClearStuckTun():Promise<void>;
 
 export function Connect(arg1:string):Promise<void>;
@@ -33,6 +35,8 @@ export function GetStats(arg1:string):Promise<main.StatsDTO>;
 export function GetSystemProxyStatus():Promise<boolean>;
 
 export function GetTunnelMode():Promise<string>;
+
+export function GrantNetworkPrivileges():Promise<boolean>;
 
 export function InstallUpdate(arg1:string,arg2:string):Promise<void>;
 

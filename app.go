@@ -26,6 +26,7 @@ import (
 	"github.com/goxray/desktop/internal/osspecific/clean"
 	"github.com/goxray/desktop/internal/osspecific/networkready"
 	"github.com/goxray/desktop/internal/osspecific/proxy"
+	"github.com/goxray/desktop/internal/osspecific/root"
 	"github.com/goxray/desktop/internal/sleepwatch"
 	"github.com/goxray/desktop/internal/updater"
 	xray3 "github.com/lilendian0x00/xray-knife/v3/pkg/xray"
@@ -77,6 +78,14 @@ type AppInfoDTO struct {
 	OS          string `json:"os"`
 	Arch        string `json:"arch"`
 	Description string `json:"description"`
+}
+
+type NetworkPrivilegesDTO struct {
+	HasPrivileges bool   `json:"hasPrivileges"`
+	OS            string `json:"os"`
+	ExePath       string `json:"exePath"`
+	Command       string `json:"command"`
+	Error         string `json:"error,omitempty"`
 }
 
 type App struct {
@@ -285,6 +294,30 @@ func (a *App) Connect(id string) error {
 	if currentActive == id {
 		return a.Disconnect()
 	}
+
+	// Pre-check network privileges to prevent crashes and alert the user
+	if has, err := root.HasNetworkPrivileges(); !has {
+		_, fixCmd := root.GetPrivilegeFixCommand()
+		errMsg := fmt.Sprintf("Missing network privileges. Please run: %s", fixCmd)
+		if err != nil {
+			errMsg = fmt.Sprintf("Missing network privileges (%s). Run: %s", err.Error(), fixCmd)
+		}
+		slog.Error("cannot connect due to missing network privileges", "error", err, "command", fixCmd)
+		if a.ctx != nil {
+			wruntime.EventsEmit(a.ctx, "network:privileges_required", map[string]any{
+				"error":   errMsg,
+				"command": fixCmd,
+			})
+			wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
+				"status":  "error",
+				"id":      id,
+				"error":   errMsg,
+				"command": fixCmd,
+			})
+		}
+		return errors.New(errMsg)
+	}
+
 	return a.connectInternal(id)
 }
 
@@ -493,6 +526,33 @@ func (a *App) GetAppInfo() AppInfoDTO {
 		Arch:        runtime.GOARCH,
 		Description: "Fast, minimal, and transparent desktop VPN client.",
 	}
+}
+
+func (a *App) CheckNetworkPrivileges() NetworkPrivilegesDTO {
+	has, err := root.HasNetworkPrivileges()
+	exePath, cmd := root.GetPrivilegeFixCommand()
+	errStr := ""
+	if err != nil {
+		errStr = err.Error()
+	}
+	return NetworkPrivilegesDTO{
+		HasPrivileges: has,
+		OS:            runtime.GOOS,
+		ExePath:       exePath,
+		Command:       cmd,
+		Error:         errStr,
+	}
+}
+
+func (a *App) GrantNetworkPrivileges() (bool, error) {
+	if runtime.GOOS == "linux" {
+		if err := root.GrantPrivilegesViaPkexec(); err != nil {
+			return false, err
+		}
+		has, _ := root.HasNetworkPrivileges()
+		return has, nil
+	}
+	return true, nil
 }
 
 func (a *App) OpenURL(targetURL string) {

@@ -85,6 +85,26 @@ export namespace main {
 	        this.totalBytes = source["totalBytes"];
 	    }
 	}
+	export class NetworkPrivilegesDTO {
+	    hasPrivileges: boolean;
+	    os: string;
+	    exePath: string;
+	    command: string;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new NetworkPrivilegesDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hasPrivileges = source["hasPrivileges"];
+	        this.os = source["os"];
+	        this.exePath = source["exePath"];
+	        this.command = source["command"];
+	        this.error = source["error"];
+	    }
+	}
 	export class ProxyEndpointsDTO {
 	    socks5Host: string;
 	    socks5Port: number;

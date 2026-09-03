@@ -18,6 +18,10 @@ export function CheckForUpdate() {
   return window['go']['main']['App']['CheckForUpdate']();
 }
 
+export function CheckNetworkPrivileges() {
+  return window['go']['main']['App']['CheckNetworkPrivileges']();
+}
+
 export function ClearStuckTun() {
   return window['go']['main']['App']['ClearStuckTun']();
 }
@@ -60,6 +64,10 @@ export function GetSystemProxyStatus() {
 
 export function GetTunnelMode() {
   return window['go']['main']['App']['GetTunnelMode']();
+}
+
+export function GrantNetworkPrivileges() {
+  return window['go']['main']['App']['GrantNetworkPrivileges']();
 }
 
 export function InstallUpdate(arg1, arg2) {

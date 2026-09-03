@@ -1,39 +1,52 @@
-//go:build windows
-
 package root
 
 import (
 	"log/slog"
 	"os"
 	"strings"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 )
 
 func PromptRootAccess() {
-	token := windows.GetCurrentProcessToken()
-	if token.IsElevated() {
-		return
-	}
+	if !hasPermissions() {
+		verb := "runas"
+		exe, _ := os.Executable()
+		cwd, _ := os.Getwd()
+		args := strings.Join(append(os.Args[1:], appendFlag), " ")
 
-	slog.Info("Process is not elevated, attempting UAC elevation via runas...")
+		verbPtr, _ := syscall.UTF16PtrFromString(verb)
+		exePtr, _ := syscall.UTF16PtrFromString(exe)
+		cwdPtr, _ := syscall.UTF16PtrFromString(cwd)
+		argPtr, _ := syscall.UTF16PtrFromString(args)
 
-	exePath, err := os.Executable()
-	if err != nil {
-		slog.Warn("Failed to determine executable path for elevation", "err", err)
-		return
-	}
+		var showCmd int32 = 1 // SW_NORMAL
 
-	args := strings.Join(os.Args[1:], " ")
-
-	verbPtr, _ := windows.UTF16PtrFromString("runas")
-	exePtr, _ := windows.UTF16PtrFromString(exePath)
-	argsPtr, _ := windows.UTF16PtrFromString(args)
-
-	err = windows.ShellExecute(0, verbPtr, exePtr, argsPtr, nil, windows.SW_SHOWNORMAL)
-	if err == nil {
+		err := windows.ShellExecute(0, verbPtr, exePtr, argPtr, cwdPtr, showCmd)
+		if err != nil {
+			slog.Error("failed to elevate on windows", "error", err)
+			return
+		}
 		os.Exit(0)
 	}
+}
 
-	slog.Warn("UAC elevation failed or was cancelled by user", "err", err)
+func HasNetworkPrivileges() (bool, error) {
+	var token windows.Token
+	err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY, &token)
+	if err != nil {
+		return false, err
+	}
+	defer token.Close()
+	return token.IsElevated(), nil
+}
+
+func GetPrivilegeFixCommand() (string, string) {
+	exePath, _ := os.Executable()
+	return exePath, "Right click Kite and select 'Run as administrator'"
+}
+
+func GrantPrivilegesViaPkexec() error {
+	return nil
 }

@@ -318,9 +318,17 @@ func (c *Client) Disconnect(ctx context.Context) error {
 }
 
 func (c *Client) xrayToGatewayRoute() route.Opts {
+	var gw net.IP
+	if c.cfg.GatewayIP != nil {
+		gw = *c.cfg.GatewayIP
+	}
+	var routes []*route.Addr
+	if c.xSrvIP != nil {
+		routes = []*route.Addr{route.MustParseAddr(c.xSrvIP.String() + "/32")}
+	}
 	return route.Opts{
-		Gateway: *c.cfg.GatewayIP,
-		Routes:  []*route.Addr{route.MustParseAddr(c.xSrvIP.String() + "/32")},
+		Gateway: gw,
+		Routes:  routes,
 	}
 }
 

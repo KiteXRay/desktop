@@ -83,4 +83,12 @@ export interface UpdateProgress {
   error?: string;
 }
 
+export interface NetworkPrivilegesDTO {
+  hasPrivileges: boolean;
+  os: string;
+  exePath: string;
+  command: string;
+  error?: string;
+}
+
 

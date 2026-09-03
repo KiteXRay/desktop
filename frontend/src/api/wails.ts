@@ -1,4 +1,4 @@
-import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp, ReleaseInfo, UpdateProgress } from '../types';
+import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO } from '../types';
 
 declare global {
   interface Window {
@@ -29,6 +29,8 @@ declare global {
           LaunchAppWithProxy(appName: string, targetPath: string): Promise<void>;
           CheckForUpdate(): Promise<ReleaseInfo>;
           InstallUpdate(assetUrl: string, releaseUrl: string): Promise<void>;
+          CheckNetworkPrivileges(): Promise<NetworkPrivilegesDTO>;
+          GrantNetworkPrivileges(): Promise<boolean>;
         };
       };
     };
@@ -267,6 +269,29 @@ export const api = {
   onUpdateProgress(callback: (progress: UpdateProgress) => void): () => void {
     if (window.runtime?.EventsOn) {
       return window.runtime.EventsOn('update:progress', callback);
+    }
+    return () => {};
+  },
+
+  async checkNetworkPrivileges(): Promise<NetworkPrivilegesDTO | null> {
+    const app = getApp() as any;
+    if (app?.CheckNetworkPrivileges) {
+      return app.CheckNetworkPrivileges();
+    }
+    return null;
+  },
+
+  async grantNetworkPrivileges(): Promise<boolean> {
+    const app = getApp() as any;
+    if (app?.GrantNetworkPrivileges) {
+      return app.GrantNetworkPrivileges();
+    }
+    return false;
+  },
+
+  onNetworkPrivilegesRequired(callback: (data: { error: string; command: string }) => void): () => void {
+    if (window.runtime?.EventsOn) {
+      return window.runtime.EventsOn('network:privileges_required', callback);
     }
     return () => {};
   }

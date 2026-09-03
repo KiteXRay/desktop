@@ -17,13 +17,14 @@ import {
   Rocket
 } from 'lucide-react';
 import { api } from './api/wails';
-import type { ConnectionDTO, TunnelMode, InstalledApp, ReleaseInfo, UpdateProgress } from './types';
+import type { ConnectionDTO, TunnelMode, InstalledApp, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO } from './types';
 import { ProfileCard } from './components/ProfileCard';
 import { NetworkChart } from './components/NetworkChart';
 import { ConfigDetails } from './components/ConfigDetails';
 import { AddEditModal } from './components/AddEditModal';
 import { SelectAppModal } from './components/SelectAppModal';
 import { UpdateModal } from './components/UpdateModal';
+import { PrivilegeModal } from './components/PrivilegeModal';
 import { AboutView } from './components/AboutView';
 import { PerAppView } from './components/PerAppView';
 import { formatBytes } from './utils/formatters';
@@ -75,7 +76,30 @@ export function App() {
     }
   });
 
+  const [privilegeInfo, setPrivilegeInfo] = useState<NetworkPrivilegesDTO | null>(null);
+  const [isPrivilegeModalOpen, setIsPrivilegeModalOpen] = useState(false);
+
   useEffect(() => {
+    // Check network privileges on startup
+    api.checkNetworkPrivileges().then(info => {
+      if (info && !info.hasPrivileges) {
+        setPrivilegeInfo(info);
+        setIsPrivilegeModalOpen(true);
+      }
+    }).catch(() => {});
+
+    // Listen for runtime privilege errors
+    const unsubPrivs = api.onNetworkPrivilegesRequired(data => {
+      setPrivilegeInfo(prev => ({
+        hasPrivileges: false,
+        os: prev?.os || 'linux',
+        exePath: prev?.exePath || '',
+        command: data.command,
+        error: data.error,
+      }));
+      setIsPrivilegeModalOpen(true);
+    });
+
     const unsubProgress = api.onUpdateProgress(prog => {
       setUpdateProgress(prog);
     });
@@ -93,10 +117,32 @@ export function App() {
     }, 2000);
 
     return () => {
+      unsubPrivs();
       unsubProgress();
       clearTimeout(timer);
     };
   }, []);
+
+  const handleCheckPrivilegesAgain = async (): Promise<boolean> => {
+    const info = await api.checkNetworkPrivileges();
+    if (info && info.hasPrivileges) {
+      setPrivilegeInfo(info);
+      showToast('Network privileges verified successfully!', 'success');
+      return true;
+    }
+    return false;
+  };
+
+  const handleGrantWithPkexec = async (): Promise<boolean> => {
+    const ok = await api.grantNetworkPrivileges();
+    if (ok) {
+      const info = await api.checkNetworkPrivileges();
+      setPrivilegeInfo(info);
+      showToast('Network privileges granted successfully!', 'success');
+      return true;
+    }
+    return false;
+  };
 
   const handleInstallUpdate = async (assetUrl: string, releaseUrl: string) => {
     try {
@@ -720,6 +766,16 @@ export function App() {
         progress={updateProgress}
         onClose={() => setIsUpdateModalOpen(false)}
         onInstall={handleInstallUpdate}
+      />
+
+      {/* Network Privileges Required Modal */}
+      <PrivilegeModal
+        isOpen={isPrivilegeModalOpen}
+        command={privilegeInfo?.command || 'sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /opt/kite/kite'}
+        errorMessage={privilegeInfo?.error}
+        onClose={() => setIsPrivilegeModalOpen(false)}
+        onCheckAgain={handleCheckPrivilegesAgain}
+        onGrantWithPkexec={handleGrantWithPkexec}
       />
     </div>
   );

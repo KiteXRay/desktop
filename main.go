@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -73,10 +74,116 @@ StartupWMClass=kite
 	_ = os.WriteFile(filepath.Join(appDir, "kite.desktop"), []byte(content), 0644)
 }
 
+func installToOpt() error {
+	exePath, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	optDir := "/opt/kite"
+	if err := os.MkdirAll(optDir, 0755); err != nil {
+		return fmt.Errorf("create /opt/kite: %w", err)
+	}
+
+	targetExe := filepath.Join(optDir, "kite")
+	targetIcon := filepath.Join(optDir, "kite.png")
+
+	// 1. Copy binary
+	data, err := os.ReadFile(exePath)
+	if err != nil {
+		return fmt.Errorf("read executable: %w", err)
+	}
+	if err := os.WriteFile(targetExe, data, 0755); err != nil {
+		return fmt.Errorf("write /opt/kite/kite: %w", err)
+	}
+
+	// 2. Set capabilities
+	if setcapPath, err := exec.LookPath("setcap"); err == nil {
+		cmd := exec.Command(setcapPath, "cap_net_raw,cap_net_admin,cap_net_bind_service+eip", targetExe)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fmt.Printf("Warning: setcap failed: %s\n", string(out))
+		}
+	} else {
+		fmt.Println("Warning: setcap tool not found in PATH. Please install libcap2-bin.")
+	}
+
+	// 3. Write icons
+	_ = os.WriteFile(targetIcon, appIcon, 0644)
+	_ = os.MkdirAll("/usr/share/icons/hicolor/512x512/apps", 0755)
+	_ = os.WriteFile("/usr/share/icons/hicolor/512x512/apps/kite.png", appIcon, 0644)
+	_ = os.MkdirAll("/usr/share/pixmaps", 0755)
+	_ = os.WriteFile("/usr/share/pixmaps/kite.png", appIcon, 0644)
+
+	// 4. Desktop entry
+	desktopContent := fmt.Sprintf(`[Desktop Entry]
+Name=Kite
+Comment=Fast, minimal, and transparent desktop VPN client
+Exec=%s %%U
+Icon=%s
+Terminal=false
+Type=Application
+Categories=Network;VPN;Security;
+StartupWMClass=kite
+MimeType=x-scheme-handler/vless;x-scheme-handler/vmess;x-scheme-handler/trojan;x-scheme-handler/ss;
+`, targetExe, targetIcon)
+
+	_ = os.MkdirAll("/usr/share/applications", 0755)
+	_ = os.WriteFile("/usr/share/applications/kite.desktop", []byte(desktopContent), 0644)
+
+	// 5. Symlink /usr/local/bin/kite
+	_ = os.Remove("/usr/local/bin/kite")
+	_ = os.Symlink(targetExe, "/usr/local/bin/kite")
+
+	// 6. Update desktop & icon caches
+	_ = exec.Command("update-desktop-database", "-q", "/usr/share/applications").Run()
+	_ = exec.Command("gtk-update-icon-cache", "-q", "/usr/share/icons/hicolor").Run()
+
+	return nil
+}
+
+func handleInstallFlag() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	for _, arg := range os.Args[1:] {
+		if arg == "--install" || arg == "install" {
+			if os.Geteuid() != 0 {
+				fmt.Println("Installing Kite to /opt/ requires administrator privileges. Elevating with sudo...")
+				exe, _ := os.Executable()
+				cmd := exec.Command("sudo", append([]string{exe}, os.Args[1:]...)...)
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				cmd.Stdin = os.Stdin
+				if err := cmd.Run(); err != nil {
+					fmt.Fprintf(os.Stderr, "Elevated execution failed: %v\n", err)
+					os.Exit(1)
+				}
+				os.Exit(0)
+			}
+			err := installToOpt()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Installation failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("✓ Kite successfully installed to /opt/kite/kite!")
+			fmt.Println("✓ Network capabilities (CAP_NET_ADMIN, CAP_NET_RAW) assigned.")
+			fmt.Println("✓ Desktop entry and icons created.")
+			fmt.Println("✓ Symlinked to /usr/local/bin/kite")
+			os.Exit(0)
+		}
+	}
+	return false
+}
+
 func initialize() {
 	root.PromptRootAccess()
 	ensureDesktopFileLinux()
 	dock.SetWindowIconFromPNG(appIcon)
+
+	if has, err := root.HasNetworkPrivileges(); !has {
+		_, fixCmd := root.GetPrivilegeFixCommand()
+		slog.Warn("Network capabilities missing. Kite needs CAP_NET_ADMIN to configure TUN interfaces.", "cmd", fixCmd, "err", err)
+	}
 }
 
 type TrayController struct {
@@ -212,6 +319,9 @@ func setupSystray(app *App) *TrayController {
 }
 
 func main() {
+	if handleInstallFlag() {
+		return
+	}
 	initialize()
 
 	app := NewApp()

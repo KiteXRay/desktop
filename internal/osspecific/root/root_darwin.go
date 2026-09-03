@@ -1,32 +1,49 @@
 package root
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
-	"path/filepath"
-
-	"github.com/getlantern/elevate"
+	"os/exec"
+	"strings"
 )
 
-const appPackageIcons = "/../Resources/icon.icns"
-
 func PromptRootAccess() {
-	// A really hacky way to get admin password prompt for macOS
 	if !hasPermissions() {
 		runItselfAsRoot()
-		os.Exit(0)
 	}
 }
 
 func runItselfAsRoot() {
-	p, err := os.Executable()
+	exe, err := os.Executable()
 	if err != nil {
 		panic(fmt.Errorf("could not get executable path: %v", err))
 	}
-	cmd := elevate.WithIcon(filepath.Dir(p)+appPackageIcons).WithPrompt("Kite requires admin privileges").
-		Command(p, append(os.Args[1:], appendFlag)...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	_ = cmd.Run()
+	args := strings.Join(append(os.Args[1:], appendFlag), " ")
+	prompt := "Kite requires administrative privileges to configure VPN network interfaces."
+	script := fmt.Sprintf("do shell script \"%s %s\" with prompt \"%s\" with administrator privileges", exe, args, prompt)
+	cmd := exec.Command("osascript", "-e", script)
+	err = cmd.Run()
+	if err != nil {
+		slog.Error("failed to elevate on darwin", "error", err)
+		return
+	}
+	os.Exit(0)
+}
+
+func HasNetworkPrivileges() (bool, error) {
+	if os.Geteuid() == 0 {
+		return true, nil
+	}
+	return false, errors.New("administrative privileges required on macOS")
+}
+
+func GetPrivilegeFixCommand() (string, string) {
+	exePath, _ := os.Executable()
+	return exePath, "sudo " + exePath
+}
+
+func GrantPrivilegesViaPkexec() error {
+	return nil
 }
