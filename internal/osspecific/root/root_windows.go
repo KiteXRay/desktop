@@ -10,6 +10,13 @@ import (
 )
 
 func PromptRootAccess() {
+	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil || strings.Contains(exe, "wailsbindings") || strings.Contains(exe, "/tmp/") {
+		return
+	}
 	if !hasPermissions() {
 		verb := "runas"
 		exe, _ := os.Executable()

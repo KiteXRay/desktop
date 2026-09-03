@@ -103,7 +103,7 @@ jobs:
           makensis /VERSION
 
       - name: Build Application with NSIS Installer
-        run: wails build -platform windows/amd64 -nsis
+        run: wails build -platform windows/amd64 -nsis -s
 
       - name: Package Portable Zip
         shell: bash
@@ -144,12 +144,18 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 
       - name: Build Application
-        run: wails build -platform darwin/universal
+        run: wails build -platform darwin/universal -s
 
       - name: Package Release
         run: |
           cd build/bin
-          zip -r ../../kite-macos-universal.zip Kite.app
+          if [ -d "Kite.app" ]; then
+            zip -r ../../kite-macos-universal.zip Kite.app
+          elif [ -d "kite.app" ]; then
+            zip -r ../../kite-macos-universal.zip kite.app
+          else
+            zip -r ../../kite-macos-universal.zip *.app
+          fi
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2

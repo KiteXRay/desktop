@@ -176,6 +176,10 @@ func handleInstallFlag() bool {
 }
 
 func initialize() {
+	exePath, _ := os.Executable()
+	if strings.Contains(exePath, "wailsbindings") || strings.Contains(exePath, "/tmp/") {
+		return
+	}
 	root.PromptRootAccess()
 	ensureDesktopFileLinux()
 	dock.SetWindowIconFromPNG(appIcon)
