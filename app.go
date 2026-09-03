@@ -520,7 +520,7 @@ func (a *App) ResetTraffic(id string) error {
 func (a *App) GetAppInfo() AppInfoDTO {
 	return AppInfoDTO{
 		Name:        "Kite",
-		Version:     "1.0.0",
+		Version:     "1.0.1",
 		RepoURL:     "https://github.com/KiteXRay/desktop",
 		OS:          runtime.GOOS,
 		Arch:        runtime.GOARCH,

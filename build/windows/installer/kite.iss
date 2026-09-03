@@ -3,7 +3,7 @@
 ; Compile using: iscc kite.iss
 
 #define MyAppName "Kite"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "Kite"
 #define MyAppURL "https://github.com/KiteXRay/desktop"
 #define MyAppExeName "kite.exe"

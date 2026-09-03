@@ -72,7 +72,7 @@ export const AboutView: React.FC<AboutViewProps> = ({
         <div>
           <h2 className="text-xl font-bold text-slate-100">{appInfo?.name || 'Kite'}</h2>
           <p className="text-xs text-slate-400 mt-1">
-            v{appInfo?.version || '1.0.0'} • {appInfo?.os || 'linux'}/{appInfo?.arch || 'amd64'}
+            v{appInfo?.version || '1.0.1'} • {appInfo?.os || 'linux'}/{appInfo?.arch || 'amd64'}
           </p>
         </div>
         <p className="text-sm text-slate-300 max-w-md">
