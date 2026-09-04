@@ -153,6 +153,7 @@ func (a *App) SetActiveID(id string) {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	_ = clean.ClearStuckNetwork()
 	go a.startStatsTicker()
 	a.startSleepWatcher()
 	go a.startHealthWatchdog()
@@ -1182,11 +1183,11 @@ func (a *App) startHealthWatchdog() {
 			}
 
 			// 2. Active health check: verify that traffic is passing through the tunnel!
-			// If probe fails 2 consecutive ticks (10s), auto-heal connection!
+			// If probe fails 3 consecutive ticks (15s), auto-heal connection!
 			if !a.verifyTunnelConnectivity(2 * time.Second) {
 				consecutiveFails++
 				slog.Warn("HealthWatchdog: tunnel connectivity probe failed", "consecutiveFails", consecutiveFails, "id", actID)
-				if consecutiveFails >= 2 {
+				if consecutiveFails >= 3 {
 					slog.Warn("HealthWatchdog: tunnel dead or unrouted, triggering auto-reconnect", "id", actID)
 					consecutiveFails = 0
 					go a.handleSystemWakeUp()
@@ -1206,19 +1207,20 @@ func (a *App) verifyTunnelConnectivity(timeout time.Duration) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	targets := []string{"cp.cloudflare.com:80", "1.1.1.1:443", "www.google.com:443", "8.8.8.8:53"}
 	if cd, ok := dialer.(socks5proxy.ContextDialer); ok {
-		if conn, err := cd.DialContext(ctx, "tcp", "1.1.1.1:443"); err == nil {
-			_ = conn.Close()
-			return true
-		}
-		if conn, err := cd.DialContext(ctx, "tcp", "8.8.8.8:53"); err == nil {
-			_ = conn.Close()
-			return true
+		for _, target := range targets {
+			if conn, err := cd.DialContext(ctx, "tcp", target); err == nil {
+				_ = conn.Close()
+				return true
+			}
 		}
 	} else {
-		if conn, err := dialer.Dial("tcp", "1.1.1.1:443"); err == nil {
-			_ = conn.Close()
-			return true
+		for _, target := range targets {
+			if conn, err := dialer.Dial("tcp", target); err == nil {
+				_ = conn.Close()
+				return true
+			}
 		}
 	}
 	return false

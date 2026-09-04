@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -102,6 +103,9 @@ type Client struct {
 	// Public HTTP proxy listener
 	httpLn  net.Listener
 	proxyWg sync.WaitGroup
+
+	// Active TUN interface name
+	ifName string
 
 	// Traffic counters (bytes)
 	bytesRead    atomic.Int64
@@ -248,7 +252,7 @@ func (c *Client) setupSystemRouting(ctx context.Context) error {
 	err = c.routes.Add(c.xrayToGatewayRoute())
 	if err != nil {
 		c.cfg.Logger.Error("routing xray server IP to default route failed", "err", err)
-		_ = c.routes.Delete(route.Opts{IfName: "tun0", Routes: c.cfg.RoutesToTUN})
+		_ = c.routes.Delete(route.Opts{IfName: c.tunIfName(), Routes: c.cfg.RoutesToTUN})
 		if c.tunnel != nil {
 			_ = c.tunnel.Close()
 			c.tunnel = nil
@@ -265,6 +269,16 @@ func (c *Client) setupSystemRouting(ctx context.Context) error {
 	}()
 
 	return nil
+}
+
+func (c *Client) tunIfName() string {
+	if c.ifName != "" {
+		return c.ifName
+	}
+	if runtime.GOOS == "windows" {
+		return "kite0"
+	}
+	return "tun0"
 }
 
 func (c *Client) Disconnect(ctx context.Context) error {
@@ -296,7 +310,7 @@ func (c *Client) Disconnect(ctx context.Context) error {
 		if c.xSrvIP != nil && c.cfg.GatewayIP != nil {
 			_ = c.routes.Delete(c.xrayToGatewayRoute())
 		}
-		_ = c.routes.Delete(route.Opts{IfName: "tun0", Routes: c.cfg.RoutesToTUN})
+		_ = c.routes.Delete(route.Opts{IfName: c.tunIfName(), Routes: c.cfg.RoutesToTUN})
 
 		ctxTimeout, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
@@ -376,6 +390,7 @@ func (c *Client) setupTunnel() (*tun.Interface, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create tun: %w", err)
 	}
+	c.ifName = ifc.Name()
 
 	if err = ifc.Up(c.cfg.TUNAddress, c.cfg.TUNAddress.IP); err != nil {
 		return nil, fmt.Errorf("setup interface: %w", err)

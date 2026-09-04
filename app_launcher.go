@@ -29,13 +29,19 @@ func launchAppWithProxy(appName, targetPath string) error {
 			strings.Contains(lower, "chromium") || strings.Contains(lower, "opera") || strings.Contains(lower, "vivaldi") ||
 			strings.Contains(lower, "yandex") || strings.Contains(lower, "arc") {
 			cmd.Args = append(cmd.Args, fmt.Sprintf("--proxy-server=%s", socksProxy))
+			if runtime.GOOS == "windows" {
+				appBase := strings.TrimSuffix(filepath.Base(cleanedPath), filepath.Ext(cleanedPath))
+				userDataDir := filepath.Join(os.TempDir(), fmt.Sprintf("kite_proxy_%s", appBase))
+				cmd.Args = append(cmd.Args, fmt.Sprintf("--user-data-dir=%s", userDataDir), "--no-first-run")
+			}
 		}
 	} else {
 		switch strings.ToLower(appName) {
 		case "chrome", "google-chrome":
 			switch runtime.GOOS {
 			case "windows":
-				cmd = exec.Command("cmd", "/c", "start", "chrome", fmt.Sprintf("--proxy-server=%s", socksProxy))
+				userDataDir := filepath.Join(os.TempDir(), "kite_proxy_chrome")
+				cmd = exec.Command("cmd", "/c", "start", "", "chrome", fmt.Sprintf("--proxy-server=%s", socksProxy), fmt.Sprintf("--user-data-dir=%s", userDataDir), "--no-first-run")
 			case "darwin":
 				cmd = exec.Command("open", "-a", "Google Chrome", "--args", fmt.Sprintf("--proxy-server=%s", socksProxy))
 			default:
@@ -44,7 +50,8 @@ func launchAppWithProxy(appName, targetPath string) error {
 		case "edge", "msedge":
 			switch runtime.GOOS {
 			case "windows":
-				cmd = exec.Command("cmd", "/c", "start", "msedge", fmt.Sprintf("--proxy-server=%s", socksProxy))
+				userDataDir := filepath.Join(os.TempDir(), "kite_proxy_edge")
+				cmd = exec.Command("cmd", "/c", "start", "", "msedge", fmt.Sprintf("--proxy-server=%s", socksProxy), fmt.Sprintf("--user-data-dir=%s", userDataDir), "--no-first-run")
 			case "darwin":
 				cmd = exec.Command("open", "-a", "Microsoft Edge", "--args", fmt.Sprintf("--proxy-server=%s", socksProxy))
 			default:
@@ -53,7 +60,7 @@ func launchAppWithProxy(appName, targetPath string) error {
 		case "firefox":
 			switch runtime.GOOS {
 			case "windows":
-				cmd = exec.Command("cmd", "/c", "start", "firefox")
+				cmd = exec.Command("cmd", "/c", "start", "", "firefox")
 			case "darwin":
 				cmd = exec.Command("open", "-a", "Firefox")
 			default:
@@ -62,7 +69,7 @@ func launchAppWithProxy(appName, targetPath string) error {
 		case "telegram":
 			switch runtime.GOOS {
 			case "windows":
-				cmd = exec.Command("cmd", "/c", "start", "telegram")
+				cmd = exec.Command("cmd", "/c", "start", "", "telegram")
 			case "darwin":
 				cmd = exec.Command("open", "-a", "Telegram")
 			default:

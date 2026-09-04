@@ -12,8 +12,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wintun"
@@ -44,6 +46,7 @@ type Interface struct {
 	session  wintun.Session
 	readWait windows.Handle
 	closed   atomic.Bool
+	mu       sync.RWMutex
 }
 
 // New creates a new TUN interface using Wintun driver.
@@ -55,6 +58,12 @@ func New(name string, MTU int) (*Interface, error) {
 	}
 	if MTU <= 0 {
 		MTU = 1500
+	}
+
+	// Always remove any stale adapter left behind from a previous run or crash
+	if old, err := wintun.OpenAdapter(name); err == nil && old != nil {
+		_ = old.Close()
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	adapter, err := wintun.CreateAdapter(name, "Kite", nil)
@@ -85,7 +94,11 @@ func New(name string, MTU int) (*Interface, error) {
 func (i *Interface) Up(local *net.IPNet, gw net.IP) error {
 	mask := "255.255.255.0"
 	if local.Mask != nil && len(local.Mask) == 4 {
-		mask = fmt.Sprintf("%d.%d.%d.%d", local.Mask[0], local.Mask[1], local.Mask[2], local.Mask[3])
+		m := fmt.Sprintf("%d.%d.%d.%d", local.Mask[0], local.Mask[1], local.Mask[2], local.Mask[3])
+		// Windows netsh rejects 255.255.255.255 (/32). Wintun adapters require a valid subnet (e.g. 255.255.255.0).
+		if m != "255.255.255.255" {
+			mask = m
+		}
 	}
 
 	// Use netsh to configure the static IP and netmask on the adapter
@@ -131,12 +144,23 @@ func (i *Interface) Read(p []byte) (int, error) {
 			return 0, io.EOF
 		}
 
+		i.mu.RLock()
+		if i.closed.Load() {
+			i.mu.RUnlock()
+			return 0, io.EOF
+		}
+
 		packet, err := i.session.ReceivePacket()
 		if err == nil {
-			n := copy(p, packet)
-			i.session.ReleaseReceivePacket(packet)
+			var n int
+			if len(packet) > 0 {
+				n = copy(p, packet)
+				i.session.ReleaseReceivePacket(packet)
+			}
+			i.mu.RUnlock()
 			return n, nil
 		}
+		i.mu.RUnlock()
 
 		if errors.Is(err, windows.ERROR_HANDLE_EOF) {
 			return 0, io.EOF
@@ -157,9 +181,23 @@ func (i *Interface) Write(p []byte) (int, error) {
 	if i.closed.Load() {
 		return 0, io.ErrClosedPipe
 	}
+	if len(p) == 0 {
+		return 0, nil
+	}
+
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	if i.closed.Load() {
+		return 0, io.ErrClosedPipe
+	}
 
 	packet, err := i.session.AllocateSendPacket(len(p))
 	if err != nil {
+		if errors.Is(err, windows.ERROR_BUFFER_OVERFLOW) {
+			// Ring buffer is full; packet drop is standard behavior under buffer overflow
+			return len(p), nil
+		}
 		return 0, err
 	}
 
@@ -172,9 +210,14 @@ func (i *Interface) Write(p []byte) (int, error) {
 func (i *Interface) Close() error {
 	if i.closed.CompareAndSwap(false, true) {
 		windows.SetEvent(i.readWait)
+
+		// Wait for active Read / Write calls to finish before unmapping ring buffer memory
+		i.mu.Lock()
+		defer i.mu.Unlock()
+
 		i.session.End()
 		if i.adapter != nil {
-			i.adapter.Close()
+			_ = i.adapter.Close()
 		}
 	}
 	return nil

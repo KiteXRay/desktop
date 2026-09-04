@@ -304,6 +304,13 @@ func setupSystray(app *App) *TrayController {
 			}
 		})
 
+		// Right click displays context menu on Windows and macOS
+		systray.SetOnRClick(func(menu systray.IMenu) {
+			if menu != nil {
+				_ = menu.ShowMenu()
+			}
+		})
+
 		tc.updateMenu()
 	}
 
@@ -311,9 +318,19 @@ func setupSystray(app *App) *TrayController {
 		_ = app.Disconnect()
 	}
 
-	start, end := systray.RunWithExternalLoop(onReady, onExit)
-	start()
-	tc.stopTray = end
+	if runtime.GOOS == "windows" {
+		go func() {
+			runtime.LockOSThread()
+			systray.Run(onReady, onExit)
+		}()
+		tc.stopTray = func() {
+			systray.Quit()
+		}
+	} else {
+		start, end := systray.RunWithExternalLoop(onReady, onExit)
+		start()
+		tc.stopTray = end
+	}
 
 	app.onTrayUpdate = func() {
 		tc.updateMenu()
