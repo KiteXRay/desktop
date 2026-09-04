@@ -101,6 +101,9 @@ func buildLinkFromMap(cfg map[string]string) (string, error) {
 		if hType := strings.TrimSpace(cfg["HeaderType"]); hType != "" {
 			v.Set("headerType", hType)
 		}
+		if mode := strings.TrimSpace(cfg["Mode"]); mode != "" {
+			v.Set("mode", mode)
+		}
 		if enc := strings.TrimSpace(cfg["Encryption"]); enc != "" {
 			v.Set("encryption", enc)
 		} else {

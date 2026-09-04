@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -526,7 +527,7 @@ func (a *App) ResetTraffic(id string) error {
 func (a *App) GetAppInfo() AppInfoDTO {
 	return AppInfoDTO{
 		Name:        "Kite",
-		Version:     "1.0.1",
+		Version:     "1.0.2",
 		RepoURL:     "https://github.com/KiteXRay/desktop",
 		OS:          runtime.GOOS,
 		Arch:        runtime.GOARCH,
@@ -599,47 +600,57 @@ func pingRoutedConnection(link string, timeout time.Duration) (latency int64) {
 	}
 	defer instance.Close()
 
-	start := time.Now()
-	// Test Cloudflare generate_204 through in-memory proxy
+	if tr, ok := client.Transport.(*http.Transport); ok {
+		tr.DisableKeepAlives = false
+	}
+
+	var connStart, connDone time.Time
+	trace := &httptrace.ClientTrace{
+		ConnectStart: func(network, addr string) {
+			connStart = time.Now()
+		},
+		ConnectDone: func(network, addr string, err error) {
+			connDone = time.Now()
+		},
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://cp.cloudflare.com/generate_204", nil)
+	targetURL := "https://www.google.com/generate_204"
+
+	// 1. Establish connection through VPN tunnel to verify credentials and routing
+	req1, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), "HEAD", targetURL, nil)
 	if err != nil {
 		return -1
 	}
-
-	resp, err := client.Do(req)
-	if err == nil {
-		_ = resp.Body.Close()
-		elapsed := time.Since(start).Milliseconds()
-		if elapsed <= 0 {
-			elapsed = 1
-		}
-		return elapsed
-	}
-
-	// Fallback to Google generate_204
-	startG := time.Now()
-	ctxG, cancelG := context.WithTimeout(context.Background(), timeout)
-	defer cancelG()
-
-	reqG, errG := http.NewRequestWithContext(ctxG, "GET", "http://www.google.com/generate_204", nil)
-	if errG != nil {
+	resp1, err := client.Do(req1)
+	if err != nil {
 		return -1
 	}
+	_ = resp1.Body.Close()
 
-	respG, errG := client.Do(reqG)
-	if errG == nil {
-		_ = respG.Body.Close()
-		elapsed := time.Since(startG).Milliseconds()
-		if elapsed <= 0 {
-			elapsed = 1
+	dialMs := connDone.Sub(connStart).Milliseconds()
+
+	// 2. Measure pure 1-RTT latency over the established tunnel (without core spawn / cold handshake overhead)
+	t0 := time.Now()
+	req2, err := http.NewRequestWithContext(ctx, "HEAD", targetURL, nil)
+	if err == nil {
+		resp2, err2 := client.Do(req2)
+		if err2 == nil {
+			_ = resp2.Body.Close()
+			warmMs := time.Since(t0).Milliseconds()
+			if warmMs > 0 {
+				return warmMs
+			}
 		}
-		return elapsed
 	}
 
-	return -1
+	// Fallback to pure dial latency if warm request fails
+	if dialMs > 0 {
+		return dialMs
+	}
+	return 1
 }
 
 func (a *App) PingConnection(id string) int64 {
@@ -647,7 +658,7 @@ func (a *App) PingConnection(id string) int64 {
 	if item == nil {
 		return -1
 	}
-	res := pingRoutedConnection(item.Link(), 6*time.Second)
+	res := pingRoutedConnection(item.Link(), 2500*time.Millisecond)
 	if a.ctx != nil {
 		wruntime.EventsEmit(a.ctx, "ping:result", PingResultDTO{
 			ID:     id,
@@ -660,12 +671,10 @@ func (a *App) PingConnection(id string) int64 {
 func (a *App) PingAll() map[string]int64 {
 	allItems := a.items.All()
 	results := make(map[string]int64)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
 
-	// Test up to 5 proxies in parallel to avoid CPU/socket exhaustion
-	sem := make(chan struct{}, 5)
-
+	// Sequential execution (1 connection at a time) to prevent:
+	// 1. High CPU usage from spawning multiple in-memory Xray cores concurrently
+	// 2. gRPC ENHANCE_YOUR_CALM (too_many_pings) error from parallel streams to the same server
 	for _, itm := range allItems {
 		if itm == nil {
 			continue
@@ -673,28 +682,17 @@ func (a *App) PingAll() map[string]int64 {
 		id := itm.ID()
 		link := itm.Link()
 
-		wg.Add(1)
-		go func(connID, connLink string) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
+		latency := pingRoutedConnection(link, 2500*time.Millisecond)
+		results[id] = latency
 
-			latency := pingRoutedConnection(connLink, 6*time.Second)
-
-			mu.Lock()
-			results[connID] = latency
-			mu.Unlock()
-
-			if a.ctx != nil {
-				wruntime.EventsEmit(a.ctx, "ping:result", PingResultDTO{
-					ID:     connID,
-					PingMs: latency,
-				})
-			}
-		}(id, link)
+		if a.ctx != nil {
+			wruntime.EventsEmit(a.ctx, "ping:result", PingResultDTO{
+				ID:     id,
+				PingMs: latency,
+			})
+		}
 	}
 
-	wg.Wait()
 	return results
 }
 

@@ -50,34 +50,6 @@ const StyledSelect: React.FC<StyledSelectProps> = ({ label, className = '', chil
   </div>
 );
 
-const KNOWN_KEYS = new Set([
-  'Protocol',
-  'Address',
-  'Port',
-  'Remark',
-  'ID',
-  'Security',
-  'TLS',
-  'Flow',
-  'Encryption',
-  'Aid',
-  'Network',
-  'Type',
-  'Path',
-  'Host',
-  'ServiceName',
-  'HeaderType',
-  'SNI',
-  'TlsFingerprint',
-  'Fp',
-  'ALPN',
-  'Pbk',
-  'Sid',
-  'Spx',
-  'Authority',
-  'Mode',
-]);
-
 export const AddEditModal: React.FC<AddEditModalProps> = ({
   isOpen,
   onClose,
@@ -123,7 +95,7 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
         })
         .catch(() => {});
     } else {
-      setActiveTab('raw');
+      setActiveTab('form');
       setLabel('');
       setLink('');
       setParams({
@@ -131,7 +103,9 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
         Address: '',
         Port: '443',
         Network: 'tcp',
+        Type: 'tcp',
         Security: 'none',
+        TLS: 'none',
       });
     }
     setError(null);
@@ -162,26 +136,34 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
 
   if (!isOpen) return null;
 
-  const updateParam = async (key: string, val: string) => {
-    const next = { ...params, [key]: val };
-    if (key === 'Remark') {
-      setLabel(val);
+  const updateParams = (updates: Record<string, string>) => {
+    if (updates.Remark !== undefined) {
+      setLabel(updates.Remark);
     }
-    setParams(next);
+    setParams(prev => {
+      const next = { ...prev, ...updates };
 
-    // Auto rebuild link
-    try {
-      const generated = await api.buildLinkFromConfig(next);
-      if (generated) {
-        isUpdatingFromLinkRef.current = true;
-        setLink(generated);
-        setTimeout(() => {
-          isUpdatingFromLinkRef.current = false;
-        }, 50);
-      }
-    } catch {
-      // Incomplete fields while user is typing
-    }
+      // Auto rebuild link
+      api.buildLinkFromConfig(next)
+        .then(generated => {
+          if (generated) {
+            isUpdatingFromLinkRef.current = true;
+            setLink(generated);
+            setTimeout(() => {
+              isUpdatingFromLinkRef.current = false;
+            }, 50);
+          }
+        })
+        .catch(() => {
+          // Incomplete fields while user is typing
+        });
+
+      return next;
+    });
+  };
+
+  const updateParam = (key: string, val: string) => {
+    updateParams({ [key]: val });
   };
 
   const handlePaste = async () => {
@@ -251,11 +233,6 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
   const secVal = (params.Security || params.TLS || 'none').toLowerCase();
   const netVal = (params.Network || params.Type || 'tcp').toLowerCase();
   const protoVal = (params.Protocol || 'vless').toLowerCase();
-
-  // Custom parameters not part of known standard set
-  const extraParams = Object.entries(params).filter(
-    ([k, v]) => !KNOWN_KEYS.has(k) && !!v && typeof v === 'string'
-  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150">
@@ -436,10 +413,7 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                   <StyledSelect
                     label="Security / TLS"
                     value={secVal}
-                    onChange={e => {
-                      updateParam('Security', e.target.value);
-                      updateParam('TLS', e.target.value);
-                    }}
+                    onChange={e => updateParams({ Security: e.target.value, TLS: e.target.value })}
                   >
                     <option value="none" className="bg-slate-900 text-slate-200 py-1">None (Plain)</option>
                     <option value="tls" className="bg-slate-900 text-slate-200 py-1">TLS</option>
@@ -567,10 +541,7 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                     <StyledSelect
                       label="Fingerprint (fp)"
                       value={params.TlsFingerprint || params.Fp || 'chrome'}
-                      onChange={e => {
-                        updateParam('TlsFingerprint', e.target.value);
-                        updateParam('Fp', e.target.value);
-                      }}
+                      onChange={e => updateParams({ TlsFingerprint: e.target.value, Fp: e.target.value })}
                     >
                       <option value="chrome" className="bg-slate-900 text-slate-200 py-1">chrome</option>
                       <option value="firefox" className="bg-slate-900 text-slate-200 py-1">firefox</option>
@@ -609,10 +580,7 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                   <StyledSelect
                     label="Transport / Network Type"
                     value={netVal}
-                    onChange={e => {
-                      updateParam('Network', e.target.value);
-                      updateParam('Type', e.target.value);
-                    }}
+                    onChange={e => updateParams({ Network: e.target.value, Type: e.target.value })}
                   >
                     <option value="tcp" className="bg-slate-900 text-slate-200 py-1">TCP</option>
                     <option value="ws" className="bg-slate-900 text-slate-200 py-1">WebSocket (ws)</option>
@@ -620,6 +588,7 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                     <option value="h2" className="bg-slate-900 text-slate-200 py-1">HTTP/2 (h2)</option>
                     <option value="httpupgrade" className="bg-slate-900 text-slate-200 py-1">HTTPUpgrade</option>
                     <option value="splithttp" className="bg-slate-900 text-slate-200 py-1">SplitHTTP</option>
+                    <option value="xhttp" className="bg-slate-900 text-slate-200 py-1">XHTTP (xhttp)</option>
                   </StyledSelect>
 
                   <div>
@@ -661,6 +630,21 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                     />
                   </div>
 
+                  {(netVal === 'xhttp' || netVal === 'splithttp') && (
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                        XHTTP Mode
+                      </label>
+                      <input
+                        type="text"
+                        value={params.Mode || ''}
+                        onChange={e => updateParam('Mode', e.target.value)}
+                        placeholder="e.g. auto, packet-up, stream-up"
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                      />
+                    </div>
+                  )}
+
                   {netVal === 'grpc' && (
                     <div className="sm:col-span-2">
                       <label className="block text-[11px] font-medium text-slate-400 mb-1">
@@ -677,30 +661,6 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                   )}
                 </div>
               </div>
-
-              {/* Section 6: Additional Parameters if present */}
-              {extraParams.length > 0 && (
-                <div className="bg-slate-950/40 rounded-xl p-4 border border-slate-800/80 flex flex-col gap-3">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    Additional Parameters
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {extraParams.map(([k, v]) => (
-                      <div key={k}>
-                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                          {k}
-                        </label>
-                        <input
-                          type="text"
-                          value={v}
-                          onChange={e => updateParam(k, e.target.value)}
-                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 text-xs font-mono outline-hidden"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* Dynamic Link Preview */}
               {link && (

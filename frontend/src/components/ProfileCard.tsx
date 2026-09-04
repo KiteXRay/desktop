@@ -25,7 +25,7 @@ interface ProfileCardProps {
   isDisconnecting?: boolean;
 }
 
-export const ProfileCard: React.FC<ProfileCardProps> = ({
+export const ProfileCard: React.FC<ProfileCardProps> = React.memo(({
   connection,
   index,
   isSelected,
@@ -76,8 +76,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
               <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
             ) : active ? (
               <div className="relative flex items-center justify-center w-3.5 h-3.5">
-                <span className="absolute w-3.5 h-3.5 rounded-full bg-emerald-400/40 animate-ping" />
-                <span className="relative w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="relative w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
               </div>
             ) : (
               <span className="w-2 h-2 rounded-full bg-slate-600" />
@@ -90,11 +89,11 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
               {label}
             </h3>
             {isConnecting ? (
-              <span className="px-1.5 py-0.2 text-[9px] font-medium rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse shrink-0">
+              <span className="px-1.5 py-0.2 text-[9px] font-medium rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
                 Connecting
               </span>
             ) : isDisconnecting ? (
-              <span className="px-1.5 py-0.2 text-[9px] font-medium rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse shrink-0">
+              <span className="px-1.5 py-0.2 text-[9px] font-medium rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 shrink-0">
                 Disconnecting
               </span>
             ) : active ? (
@@ -112,7 +111,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
             disabled={isPinging}
             className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono transition-colors border cursor-pointer ${
               isPinging
-                ? 'text-indigo-300 bg-indigo-950/40 border-indigo-700/50 animate-pulse'
+                ? 'text-indigo-300 bg-indigo-950/40 border-indigo-700/50'
                 : pingMs !== undefined && pingMs > 0
                 ? pingMs < 120
                   ? 'text-emerald-400 bg-emerald-950/30 border-emerald-800/40 hover:bg-emerald-900/40'
@@ -236,4 +235,4 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
       </div>
     </div>
   );
-};
+});

@@ -38,18 +38,6 @@ export function useConnections({ showToast }: UseConnectionsOptions) {
 
     const unsubTick = api.onStatsTick(stats => {
       setActiveStats(stats);
-      setConnections(prev =>
-        prev.map(c =>
-          c.id === stats.id
-            ? {
-                ...c,
-                bytesRead: stats.bytesRead,
-                bytesWritten: stats.bytesWritten,
-                totalBytes: stats.totalBytes ?? (stats.bytesRead + stats.bytesWritten),
-              }
-            : c
-        )
-      );
     });
 
     const unsubStatus = api.onConnectionStatus(event => {

@@ -9,7 +9,7 @@ interface ConfigDetailsProps {
   isLaunchingApp?: boolean;
 }
 
-export const ConfigDetails: React.FC<ConfigDetailsProps> = ({
+export const ConfigDetails: React.FC<ConfigDetailsProps> = React.memo(({
   connection,
   tunnelMode = 'system',
   onSelectExecutable,
@@ -153,4 +153,4 @@ export const ConfigDetails: React.FC<ConfigDetailsProps> = ({
     </div>
   </div>
 );
-};
+});

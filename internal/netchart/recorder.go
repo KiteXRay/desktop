@@ -36,7 +36,7 @@ func NewRecorder(s Source) *Recorder {
 	return &Recorder{
 		base:        s,
 		interval:    time.Second, // store data value per interval
-		recordLimit: 60 * 2,      // store and record only last 2 minutes of data
+		recordLimit: 60,          // store and record last 60 seconds (1 minute rolling window)
 		done:        make(chan struct{}, 1),
 	}
 }

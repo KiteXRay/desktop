@@ -418,26 +418,27 @@ export function App() {
       )}
 
       {/* Header Bar */}
-      <header className="h-16 px-5 border-b border-slate-800/80 bg-slate-900/50 backdrop-blur-md flex items-center justify-between shrink-0">
-        {/* Left: Brand */}
-        <div className="flex items-center gap-3">
-          <img
-            src="/icon.png"
-            alt="Kite"
-            className="w-9 h-9 rounded-xl shadow-md shadow-indigo-600/30 border border-slate-700/50 object-cover"
-          />
-          <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
-            Kite
-            <span className="text-[10px] font-mono font-normal text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded-md border border-indigo-500/20">
-              XRay
-            </span>
-          </h1>
-        </div>
+      <header className="h-16 px-5 border-b border-slate-800 bg-slate-900/95 flex items-center justify-between shrink-0">
+        {/* Left: Brand, Mode Switcher & Connect / Disconnect */}
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="flex items-center gap-3 shrink-0">
+            <img
+              src="/icon.png"
+              alt="Kite"
+              className="w-9 h-9 rounded-xl shadow-md shadow-indigo-600/30 border border-slate-700/50 object-cover"
+            />
+            <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
+              Kite
+              <span className="text-[10px] font-mono font-normal text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded-md border border-indigo-500/20">
+                XRay
+              </span>
+            </h1>
+          </div>
 
-        {/* Center: Mode Switcher & Smart Connect / Disconnect */}
-        <div className="flex items-center gap-3">
+          <div className="h-5 w-px bg-slate-800/80 shrink-0" />
+
           {/* Mode Switcher Segmented Control */}
-          <div className="flex items-center bg-slate-900 p-1 rounded-full border border-slate-800 shadow-inner">
+          <div className="flex items-center bg-slate-900 p-1 rounded-full border border-slate-800 shadow-inner shrink-0">
             <button
               onClick={() => handleModeChange('system')}
               className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
@@ -466,10 +467,9 @@ export function App() {
 
           {/* Smart Connect / Disconnect Button */}
           {activeConnection ? (
-            <div className="flex items-center gap-2 px-3.5 py-1 rounded-full bg-slate-900 border border-emerald-500/30 shadow-inner">
+            <div className="flex items-center gap-2 px-3.5 py-1 rounded-full bg-slate-900 border border-emerald-500/30 shadow-inner shrink-0">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400 shadow-[0_0_8px_#34d399]" />
               </span>
               <span className="text-xs font-medium text-emerald-400 truncate max-w-[130px]" title={activeConnection.label}>
                 {activeConnection.label}
@@ -484,14 +484,14 @@ export function App() {
               </button>
             </div>
           ) : connectingId !== null ? (
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium">
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium shrink-0">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
               <span>Connecting...</span>
             </div>
           ) : (
             <button
               onClick={handleSmartConnect}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/30 hover:border-indigo-500/60 text-indigo-300 hover:text-white transition-all shadow-xs active:scale-95 text-xs font-medium cursor-pointer"
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/30 hover:border-indigo-500/60 text-indigo-300 hover:text-white transition-all shadow-xs active:scale-95 text-xs font-medium cursor-pointer shrink-0"
               title={targetConnection ? `Connect to "${targetConnection.label}"` : 'Connect to VPN'}
             >
               <Power className="w-3.5 h-3.5 text-indigo-400" />
