@@ -23,3 +23,8 @@ func GrantPrivilegesViaPkexec() error {
 func GrantPrivilegesAndRestart() error {
 	return nil
 }
+
+func RelaunchApp(targetExe string, args ...string) error {
+	return nil
+}
+

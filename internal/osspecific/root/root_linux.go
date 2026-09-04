@@ -7,7 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
+	"time"
 )
 
 func PromptRootAccess() {}
@@ -50,13 +53,13 @@ func GetPrivilegeFixCommand() (string, string) {
 	} else {
 		exePath = "/opt/kite/kite"
 	}
-	cmd := fmt.Sprintf("killall kite 2>/dev/null; sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip %s && %s &", exePath, exePath)
+	cmd := fmt.Sprintf("sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip %s", exePath)
 	return exePath, cmd
 }
 
-// GrantPrivilegesAndRestart launches a detached background script that waits for the current
-// process to exit (to avoid 'Text file busy'), runs pkexec setcap, and relaunches Kite.
-func GrantPrivilegesAndRestart() error {
+// GrantPrivilegesViaPkexec invokes polkit pkexec to grant capabilities to the current executable.
+// It executes synchronously so that any polkit failure/cancellation can be reported without closing the app.
+func GrantPrivilegesViaPkexec() error {
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("get executable path: %w", err)
@@ -65,44 +68,95 @@ func GrantPrivilegesAndRestart() error {
 		exePath = realPath
 	}
 
-	pid := os.Getpid()
-
-	script := fmt.Sprintf(`
-target_pid=%d
-target_exe=%q
-
-# Wait up to 5s for the app to exit so the binary is not busy
-for i in $(seq 1 50); do
-    if ! kill -0 "$target_pid" 2>/dev/null; then
-        break
-    fi
-    sleep 0.1
-done
-
-# Ensure binary is not locked by another process
-fuser -k -TERM "$target_exe" 2>/dev/null || true
-pkill -TERM -f "$target_exe" 2>/dev/null || true
-sleep 0.2
-
-# Grant capabilities using graphical Polkit prompt (pkexec)
-if command -v pkexec >/dev/null 2>&1; then
-    pkexec setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip "$target_exe"
-elif command -v sudo >/dev/null 2>&1; then
-    sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip "$target_exe"
-fi
-
-# Relaunch the application
-nohup "$target_exe" >/dev/null 2>&1 &
-`, pid, exePath)
-
-	cmd := exec.Command("bash", "-c", script)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
+	setcapPath, err := exec.LookPath("setcap")
+	if err != nil {
+		for _, p := range []string{"/usr/sbin/setcap", "/sbin/setcap", "/usr/bin/setcap"} {
+			if _, statErr := os.Stat(p); statErr == nil {
+				setcapPath = p
+				break
+			}
+		}
 	}
-	return cmd.Start()
+	if setcapPath == "" {
+		return errors.New("setcap utility not found on system (please install libcap2-bin or libcap)")
+	}
+
+	pkexecPath, err := exec.LookPath("pkexec")
+	if err != nil {
+		return errors.New("polkit (pkexec) not found. Please run the command manually in terminal")
+	}
+
+	cmd := exec.Command(pkexecPath, setcapPath, "cap_net_raw,cap_net_admin,cap_net_bind_service+eip", exePath)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		outStr := strings.TrimSpace(string(out))
+		if outStr == "" {
+			return fmt.Errorf("authentication cancelled or failed (%w)", err)
+		}
+		return fmt.Errorf("pkexec failed: %s (%w)", outStr, err)
+	}
+	return nil
 }
 
-// GrantPrivilegesViaPkexec is maintained for backward compatibility.
-func GrantPrivilegesViaPkexec() error {
-	return GrantPrivilegesAndRestart()
+// RelaunchApp waits for the current process to exit before executing targetExe,
+// avoiding conflicts with Wails SingleInstanceLock (D-Bus session bus name).
+func RelaunchApp(targetExe string, args ...string) error {
+	if _, err := os.Stat(targetExe); err != nil {
+		if _, errOpt := os.Stat("/opt/kite/kite"); errOpt == nil {
+			targetExe = "/opt/kite/kite"
+		} else {
+			return fmt.Errorf("target binary not found: %w", err)
+		}
+	}
+
+	pid := os.Getpid()
+	script := `
+target_pid="$1"
+shift
+count=0
+while kill -0 "$target_pid" 2>/dev/null; do
+    sleep 0.05
+    count=$((count + 1))
+    if [ "$count" -ge 100 ]; then
+        kill -9 "$target_pid" 2>/dev/null || true
+        break
+    fi
+done
+sleep 0.1
+exec "$@"
+`
+	bashArgs := []string{"-c", script, "kite-relaunch", strconv.Itoa(pid), targetExe}
+	bashArgs = append(bashArgs, args...)
+
+	cmd := exec.Command("bash", bashArgs...)
+	cmd.Env = os.Environ()
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true,
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start relaunch process: %w", err)
+	}
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		os.Exit(0)
+	}()
+	return nil
+}
+
+// GrantPrivilegesAndRestart runs GrantPrivilegesViaPkexec and relaunches the executable.
+func GrantPrivilegesAndRestart() error {
+	if err := GrantPrivilegesViaPkexec(); err != nil {
+		return err
+	}
+
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("get executable path: %w", err)
+	}
+	if realPath, err := filepath.EvalSymlinks(exePath); err == nil {
+		exePath = realPath
+	}
+
+	return RelaunchApp(exePath, os.Args[1:]...)
 }

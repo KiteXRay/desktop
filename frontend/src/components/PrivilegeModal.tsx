@@ -128,10 +128,10 @@ export const PrivilegeModal: React.FC<PrivilegeModalProps> = ({
           </div>
 
           <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl font-mono text-xs text-amber-200/90 break-all select-all leading-relaxed">
-            {command || 'killall kite 2>/dev/null; sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /opt/kite/kite && /opt/kite/kite &'}
+            {command || 'sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /opt/kite/kite'}
           </div>
           <p className="text-[11px] text-slate-400 italic">
-            Note: The app must be closed before setting capabilities, otherwise Linux will return <code className="text-rose-400 font-mono">Text file busy</code>.
+            Note: After running the command, click &apos;Check Again&apos; or restart the application.
           </p>
         </div>
 

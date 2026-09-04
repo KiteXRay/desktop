@@ -23,14 +23,14 @@ import (
 	socks5proxy "golang.org/x/net/proxy"
 
 	"github.com/goxray/core/client"
-	"github.com/goxray/desktop/internal/appscan"
-	"github.com/goxray/desktop/internal/connlist"
-	"github.com/goxray/desktop/internal/osspecific/clean"
-	"github.com/goxray/desktop/internal/osspecific/networkready"
-	"github.com/goxray/desktop/internal/osspecific/proxy"
-	"github.com/goxray/desktop/internal/osspecific/root"
-	"github.com/goxray/desktop/internal/sleepwatch"
-	"github.com/goxray/desktop/internal/updater"
+	"github.com/KiteXRay/desktop/internal/appscan"
+	"github.com/KiteXRay/desktop/internal/connlist"
+	"github.com/KiteXRay/desktop/internal/osspecific/clean"
+	"github.com/KiteXRay/desktop/internal/osspecific/networkready"
+	"github.com/KiteXRay/desktop/internal/osspecific/proxy"
+	"github.com/KiteXRay/desktop/internal/osspecific/root"
+	"github.com/KiteXRay/desktop/internal/sleepwatch"
+	"github.com/KiteXRay/desktop/internal/updater"
 	xray3 "github.com/lilendian0x00/xray-knife/v3/pkg/xray"
 )
 
@@ -556,11 +556,6 @@ func (a *App) GrantNetworkPrivileges() (bool, error) {
 		if err := root.GrantPrivilegesAndRestart(); err != nil {
 			return false, err
 		}
-		// Gracefully quit the running app after a brief delay so supervisor sets capabilities and restarts
-		go func() {
-			time.Sleep(300 * time.Millisecond)
-			a.Quit()
-		}()
 		return true, nil
 	}
 	return true, nil

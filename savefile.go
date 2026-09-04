@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/goxray/desktop/internal/connlist"
+	"github.com/KiteXRay/desktop/internal/connlist"
 )
 
 const (

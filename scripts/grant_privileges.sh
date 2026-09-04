@@ -17,13 +17,7 @@ if [ -n "$PID" ]; then
     done
 fi
 
-# 2. Ensure all instances are closed so file is not busy
-echo "Closing any running instances of Kite..."
-fuser -k -TERM "$EXE" 2>/dev/null || true
-pkill -TERM -f "$EXE" 2>/dev/null || true
-sleep 0.3
-
-# 3. Apply capabilities
+# 2. Apply capabilities
 echo "Applying network capabilities..."
 if [ "$EUID" -ne 0 ]; then
     if command -v pkexec >/dev/null 2>&1; then

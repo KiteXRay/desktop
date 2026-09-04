@@ -21,9 +21,9 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/goxray/desktop/icon"
-	"github.com/goxray/desktop/internal/osspecific/dock"
-	"github.com/goxray/desktop/internal/osspecific/root"
+	"github.com/KiteXRay/desktop/icon"
+	"github.com/KiteXRay/desktop/internal/osspecific/dock"
+	"github.com/KiteXRay/desktop/internal/osspecific/root"
 )
 
 //go:embed all:frontend/dist

@@ -1,4 +1,4 @@
-module github.com/goxray/desktop
+module github.com/KiteXRay/desktop
 
 go 1.25.0
 

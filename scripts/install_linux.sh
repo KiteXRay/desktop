@@ -31,7 +31,7 @@ echo "==> Installing Kite to /opt/kite/..."
 mkdir -p /opt/kite
 
 # Copy binary and grant script
-cp "$KITE_BIN" /opt/kite/kite
+cp --remove-destination -f "$KITE_BIN" /opt/kite/kite
 chmod 755 /opt/kite/kite
 
 if [ -f "$SCRIPT_DIR/grant_privileges.sh" ]; then

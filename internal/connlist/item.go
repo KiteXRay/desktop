@@ -15,7 +15,7 @@ import (
 	xrayproto "github.com/lilendian0x00/xray-knife/v3/pkg/protocol"
 	xray3 "github.com/lilendian0x00/xray-knife/v3/pkg/xray"
 
-	"github.com/goxray/desktop/internal/netchart"
+	"github.com/KiteXRay/desktop/internal/netchart"
 )
 
 type Client interface {

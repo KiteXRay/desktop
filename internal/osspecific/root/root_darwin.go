@@ -58,3 +58,12 @@ func GrantPrivilegesViaPkexec() error {
 func GrantPrivilegesAndRestart() error {
 	return nil
 }
+
+func RelaunchApp(targetExe string, args ...string) error {
+	cmd := exec.Command(targetExe, args...)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	os.Exit(0)
+	return nil
+}

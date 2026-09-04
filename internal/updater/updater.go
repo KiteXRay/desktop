@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/KiteXRay/desktop/internal/osspecific/root"
 )
 
 type GitHubReleaseAsset struct {
@@ -362,35 +364,166 @@ func ApplyDownloadedUpdate(downloadedFilePath, releaseURL string, onPreQuit func
 		return nil
 
 	case "linux":
+		if strings.HasSuffix(downloadedFilePath, ".deb") {
+			slog.Info("Installing Debian package via pkexec...", "path", downloadedFilePath)
+			cmd := exec.Command("pkexec", "dpkg", "-i", downloadedFilePath)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				outStr := strings.TrimSpace(string(out))
+				if outStr == "" {
+					return fmt.Errorf("authentication cancelled or failed (%w)", err)
+				}
+				return fmt.Errorf("package installation failed: %s (%w)", outStr, err)
+			}
+			slog.Info("Deb package installed, restarting Kite...", "path", "/opt/kite/kite")
+			if onPreQuit != nil {
+				onPreQuit()
+			}
+			return root.RelaunchApp("/opt/kite/kite")
+		}
+
 		if strings.HasSuffix(downloadedFilePath, ".tar.gz") || strings.HasSuffix(downloadedFilePath, ".tgz") {
 			tmpExtract := filepath.Join(os.TempDir(), fmt.Sprintf("kite_update_%d", time.Now().UnixNano()))
-			_ = os.MkdirAll(tmpExtract, 0755)
+			if err := os.MkdirAll(tmpExtract, 0755); err != nil {
+				return fmt.Errorf("failed to create temp extraction directory: %w", err)
+			}
 			newBinary, err := ExtractTarGz(downloadedFilePath, tmpExtract)
-			if err == nil {
-				currentExe, errExe := os.Executable()
-				if errExe == nil {
-					oldBackup := currentExe + ".old"
-					_ = os.Remove(oldBackup)
-					if errRename := os.Rename(currentExe, oldBackup); errRename == nil {
-						if copyErr := copyFile(newBinary, currentExe, 0755); copyErr == nil {
-							slog.Info("In-place update successful, restarting Kite...", "path", currentExe)
-							if onPreQuit != nil {
-								onPreQuit()
-							}
-							cmd := exec.Command(currentExe)
-							_ = cmd.Start()
-							os.Exit(0)
-							return nil
+			if err != nil {
+				return fmt.Errorf("failed to extract update archive: %w", err)
+			}
+
+			currentExe, errExe := os.Executable()
+			if errExe != nil {
+				currentExe = "/opt/kite/kite"
+			}
+			if realPath, err := filepath.EvalSymlinks(currentExe); err == nil {
+				currentExe = realPath
+			}
+
+			// Check if we can write to currentExe directory without root
+			canWriteDirectly := false
+			testFile, errTest := os.CreateTemp(filepath.Dir(currentExe), ".write_test_*")
+			if errTest == nil {
+				_ = testFile.Close()
+				_ = os.Remove(testFile.Name())
+				canWriteDirectly = true
+			}
+
+			if canWriteDirectly {
+				// Direct in-place update (e.g. running from user home directory)
+				tmpNew := currentExe + ".new"
+				_ = os.Remove(tmpNew)
+				if errCopy := copyFile(newBinary, tmpNew, 0755); errCopy == nil {
+					if errRename := os.Rename(tmpNew, currentExe); errRename == nil {
+						slog.Info("In-place update successful, restarting Kite...", "path", currentExe)
+						if onPreQuit != nil {
+							onPreQuit()
 						}
-						_ = os.Rename(oldBackup, currentExe)
+						return root.RelaunchApp(currentExe)
 					}
 				}
-				_ = exec.Command("xdg-open", filepath.Dir(newBinary)).Start()
-				return nil
 			}
+
+			// System directory (/opt/kite, /usr/local/bin, etc.) requires elevated privileges via pkexec
+			installerScript := filepath.Join(tmpExtract, "apply_update.sh")
+			scriptContent := fmt.Sprintf(`#!/usr/bin/env bash
+set -e
+PKG_DIR=%q
+NEW_BIN=%q
+CUR_EXE=%q
+
+mkdir -p /opt/kite
+
+# Atomically replace /opt/kite/kite without truncating running inode (avoids Text file busy)
+cp -f "$NEW_BIN" /opt/kite/kite.new
+chmod 755 /opt/kite/kite.new
+mv -f /opt/kite/kite.new /opt/kite/kite
+
+# Assign network capabilities
+if command -v setcap >/dev/null 2>&1; then
+    setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /opt/kite/kite 2>/dev/null || true
+fi
+
+# Install icons and desktop launcher if present in archive
+if [ -f "$PKG_DIR/kite.png" ]; then
+    cp -f "$PKG_DIR/kite.png" /opt/kite/kite.png
+    chmod 644 /opt/kite/kite.png
+    mkdir -p /usr/share/icons/hicolor/512x512/apps /usr/share/pixmaps
+    cp -f "$PKG_DIR/kite.png" /usr/share/icons/hicolor/512x512/apps/kite.png 2>/dev/null || true
+    cp -f "$PKG_DIR/kite.png" /usr/share/pixmaps/kite.png 2>/dev/null || true
+fi
+
+if [ -f "$PKG_DIR/grant_privileges.sh" ]; then
+    cp -f "$PKG_DIR/grant_privileges.sh" /opt/kite/grant_privileges.sh
+    chmod 755 /opt/kite/grant_privileges.sh
+fi
+
+if [ -f "$PKG_DIR/uninstall.sh" ]; then
+    cp -f "$PKG_DIR/uninstall.sh" /opt/kite/uninstall.sh
+    chmod 755 /opt/kite/uninstall.sh
+fi
+
+# Create CLI symlink
+mkdir -p /usr/local/bin
+ln -sf /opt/kite/kite /usr/local/bin/kite
+
+# Create desktop entry
+mkdir -p /usr/share/applications
+cat << 'DESKTOP_EOF' > /usr/share/applications/kite.desktop
+[Desktop Entry]
+Name=Kite
+Comment=Fast, minimal, and transparent desktop VPN client
+Exec=/opt/kite/kite %%U
+Icon=kite
+Terminal=false
+Type=Application
+Categories=Network;VPN;Security;
+StartupWMClass=kite
+MimeType=x-scheme-handler/vless;x-scheme-handler/vmess;x-scheme-handler/trojan;x-scheme-handler/ss;
+DESKTOP_EOF
+chmod 644 /usr/share/applications/kite.desktop
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications 2>/dev/null || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
+fi
+
+# If currently running executable was outside /opt/kite/kite, update it too
+if [ "$CUR_EXE" != "/opt/kite/kite" ] && [ -f "$CUR_EXE" ]; then
+    cp -f "$NEW_BIN" "$CUR_EXE.new"
+    chmod 755 "$CUR_EXE.new"
+    mv -f "$CUR_EXE.new" "$CUR_EXE"
+    if command -v setcap >/dev/null 2>&1; then
+        setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip "$CUR_EXE" 2>/dev/null || true
+    fi
+fi
+`, tmpExtract, newBinary, currentExe)
+
+			if errWrite := os.WriteFile(installerScript, []byte(scriptContent), 0755); errWrite != nil {
+				return fmt.Errorf("failed to prepare update script: %w", errWrite)
+			}
+
+			slog.Info("Elevating permissions with pkexec to install update...", "script", installerScript)
+			cmd := exec.Command("pkexec", "bash", installerScript)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				outStr := strings.TrimSpace(string(out))
+				if outStr == "" {
+					return fmt.Errorf("authentication cancelled or failed (%w)", err)
+				}
+				return fmt.Errorf("installation failed: %s (%w)", outStr, err)
+			}
+
+			slog.Info("Update installed successfully, restarting Kite...", "path", currentExe)
+			if onPreQuit != nil {
+				onPreQuit()
+			}
+			return root.RelaunchApp(currentExe)
 		}
-		_ = exec.Command("xdg-open", releaseURL).Start()
-		return nil
+
+		return fmt.Errorf("unrecognized package format for Linux update: %s", downloadedFilePath)
 
 	case "darwin":
 		_ = exec.Command("open", "-R", downloadedFilePath).Start()
