@@ -116,6 +116,8 @@ type App struct {
 	isReconnecting atomic.Bool
 	updateMu       sync.Mutex
 	isUpdating     bool
+	updateCancel   context.CancelFunc
+	latestRelease  *updater.ReleaseInfo
 }
 
 func NewApp() *App {
@@ -573,10 +575,12 @@ func (a *App) ResetTraffic(id string) error {
 	return nil
 }
 
+var appVersion = "1.1.1"
+
 func (a *App) GetAppInfo() AppInfoDTO {
 	return AppInfoDTO{
 		Name:        "Kite",
-		Version:     "1.1.0",
+		Version:     appVersion,
 		RepoURL:     "https://github.com/KiteXRay/desktop",
 		OS:          runtime.GOOS,
 		Arch:        runtime.GOARCH,
@@ -752,7 +756,23 @@ func (a *App) CheckForUpdate() (*updater.ReleaseInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	return updater.CheckForUpdate(ctx, appInfo.RepoURL, appInfo.Version)
+	info, err := updater.CheckForUpdate(ctx, appInfo.RepoURL, appInfo.Version)
+	if err == nil && info != nil {
+		a.updateMu.Lock()
+		a.latestRelease = info
+		a.updateMu.Unlock()
+	}
+	return info, err
+}
+
+func (a *App) CancelUpdate() error {
+	a.updateMu.Lock()
+	defer a.updateMu.Unlock()
+	if a.updateCancel != nil {
+		a.updateCancel()
+		a.updateCancel = nil
+	}
+	return nil
 }
 
 func (a *App) InstallUpdate(assetURL, releaseURL string) error {
@@ -765,10 +785,15 @@ func (a *App) InstallUpdate(assetURL, releaseURL string) error {
 	a.updateMu.Unlock()
 
 	go func() {
+		destPath := ""
 		defer func() {
 			a.updateMu.Lock()
 			a.isUpdating = false
+			a.updateCancel = nil
 			a.updateMu.Unlock()
+			if destPath != "" {
+				_ = os.Remove(destPath)
+			}
 		}()
 
 		if assetURL == "" {
@@ -790,7 +815,7 @@ func (a *App) InstallUpdate(assetURL, releaseURL string) error {
 		if baseName == "" || baseName == "." {
 			baseName = "kite-update"
 		}
-		destPath := filepath.Join(os.TempDir(), fmt.Sprintf("kite_%d_%s", time.Now().Unix(), baseName))
+		destPath = filepath.Join(os.TempDir(), fmt.Sprintf("kite_%d_%s", time.Now().Unix(), baseName))
 
 		emitProgress := func(status string, pct float64, downloaded, total int64, errMsg string) {
 			if a.ctx != nil {
@@ -807,6 +832,13 @@ func (a *App) InstallUpdate(assetURL, releaseURL string) error {
 		emitProgress("downloading", 0, 0, 0, "")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		a.updateMu.Lock()
+		a.updateCancel = cancel
+		expectedSHA := ""
+		if a.latestRelease != nil && (a.latestRelease.AssetURL == assetURL || a.latestRelease.AssetName == baseName) {
+			expectedSHA = a.latestRelease.ExpectedSHA
+		}
+		a.updateMu.Unlock()
 		defer cancel()
 
 		var lastEmit time.Time
@@ -823,9 +855,24 @@ func (a *App) InstallUpdate(assetURL, releaseURL string) error {
 		})
 
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				slog.Info("Update download cancelled by user")
+				emitProgress("cancelled", 0, 0, 0, "Update cancelled")
+				return
+			}
 			slog.Error("Failed to download update", "error", err)
 			emitProgress("error", 0, 0, 0, err.Error())
 			return
+		}
+
+		// Verify SHA256 checksum if available
+		if expectedSHA != "" {
+			if errChk := updater.VerifyFileSHA256(destPath, expectedSHA); errChk != nil {
+				slog.Error("Failed checksum verification for update payload", "error", errChk)
+				emitProgress("error", 0, 0, 0, fmt.Sprintf("Security check failed: %v", errChk))
+				return
+			}
+			slog.Info("Checksum verification passed for update payload", "sha256", expectedSHA)
 		}
 
 		emitProgress("applying", 100, 0, 0, "")

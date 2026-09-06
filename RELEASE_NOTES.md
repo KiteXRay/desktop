@@ -1,26 +1,20 @@
-## Kite v1.1.0
+## Kite v1.1.1
 
-### 🚀 What's New
+### 🚀 Self-Update Architecture & Stability Fixes
 
-#### 1. Operating Modes (Tunnel / Proxy / Bridge)
-- **Tunnel Mode**: System-wide VPN tunnel with configurable device IP and custom DNS settings.
-- **Proxy Mode**: System-wide HTTP / SOCKS proxy configuration.
-- **Bridge Mode**: Rule-based per-application proxying.
-  - Process matching with wildcards (`*`, `?`) and regular expressions.
-  - Transparent connection interception via OS socket lookup tables (Windows & Linux).
-  - Built-in installed applications browser for easy rule creation and rule editing.
-- **Mode Settings Dialog**: Dedicated 3-tab configuration modal for all operating modes.
+#### 1. In-App Updater Enhancements
+- **Linux Distribution Compatibility**: Fixed asset selection scoring so non-Debian distributions (Arch, Fedora, openSUSE, Alpine, Void) properly select `.tar.gz` packages rather than attempting Debian `.deb` installation.
+- **Automated macOS Update**: Full automated self-update on macOS. `.zip` archives are now extracted and `/Applications/Kite.app` is updated directly (with admin escalation via AppleScript when needed) followed by automatic app relaunch.
+- **Linux Capability Preservation**: Re-applies network capabilities (`cap_net_raw,cap_net_admin,cap_net_bind_service+eip`) upon executable replacement to ensure TUN device setup remains uninterrupted.
+- **Security & Integrity**:
+  - SHA256 checksum verification against published release checksums before executing update payloads.
+  - Archive extraction hardened against directory traversal (anti-Tar/Zip-Slip) and decompression bombs.
+  - Temporary files and extraction directories are now created with strict permissions and cleaned up automatically.
+- **SemVer 2.0 Engine**: Upgraded version comparison to standard SemVer 2.0 with pre-release tag support, ensuring beta testers correctly receive stable release updates.
+- **GitHub API Rate-Limit Resilience**: Added `If-None-Match` (ETag) caching to avoid 60 req/hr unauthenticated rate-limit errors.
+- **Compile-Time Version Injection**: Release workflow now dynamically injects version tags into the binary via `-ldflags`.
 
-#### 2. Subscription Management & Smart Profile Grouping
-- **Subscription Support**: Import subscription links directly into the app alongside standard proxy links (`vless://`, `vmess://`, `trojan://`, `ss://`).
-- **Profile Grouping**:
-  - Manual links are organized under the **Local** group.
-  - Subscriptions are organized into unique **Subscription-{subId}** groups, parsed from subscription URLs or web endpoints.
-  - Collapsible group views with quick refresh and delete actions.
-- **In-Place Refresh**: Subscriptions update connection parameters in place without losing connection stats or ID, reconnecting automatically if active.
+#### 2. User Experience & Controls
+- **Download Cancellation**: Added a "Cancel Download" button in the update modal so in-progress downloads can be safely aborted.
+- **Snooze & Skip Controls**: Added "Remind Tomorrow" (24-hour snooze) and "Skip Version" options to prevent intrusive modal alerts on every startup.
 
-#### 3. UI & Connection Enhancements
-- Expanded Reality Flow options (`xtls-rprx-vision`, `xtls-rprx-vision-udp443`), protocols, transports, and XHTTP modes.
-- Streamlined profile cards and details view.
-- Seamless Linux in-app updates: automatic installation and relaunch for Debian/Ubuntu (.deb) and Linux archives (.tar.gz).
-- Faster, more resilient connection handling across all platforms.

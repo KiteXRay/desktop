@@ -259,6 +259,14 @@ export function App() {
         const info = await api.checkForUpdate();
         if (info && info.available) {
           setUpdateInfo(info);
+          const skipped = localStorage.getItem('kite_skipped_update_version');
+          const snoozedUntil = Number(localStorage.getItem('kite_snoozed_update_until') || 0);
+          if (skipped === info.latestVersion) {
+            return;
+          }
+          if (Date.now() < snoozedUntil) {
+            return;
+          }
           setIsUpdateModalOpen(true);
         }
       } catch (err) {
@@ -322,6 +330,29 @@ export function App() {
     } catch (err: any) {
       showToast(`Update error: ${err?.message || err}`, 'error');
     }
+  };
+
+  const handleCancelUpdate = async () => {
+    try {
+      await api.cancelUpdate();
+      setUpdateProgress(null);
+      showToast('Update download cancelled', 'info');
+    } catch (err: any) {
+      console.error('Failed to cancel update:', err);
+    }
+  };
+
+  const handleSnoozeUpdate = () => {
+    const until = Date.now() + 24 * 60 * 60 * 1000;
+    localStorage.setItem('kite_snoozed_update_until', String(until));
+    setIsUpdateModalOpen(false);
+    showToast('Update reminder snoozed for 24 hours', 'info');
+  };
+
+  const handleSkipVersion = (version: string) => {
+    localStorage.setItem('kite_skipped_update_version', version);
+    setIsUpdateModalOpen(false);
+    showToast(`Skipped version ${version}`, 'info');
   };
 
   useEffect(() => {
@@ -1053,6 +1084,9 @@ export function App() {
         progress={updateProgress}
         onClose={() => setIsUpdateModalOpen(false)}
         onInstall={handleInstallUpdate}
+        onCancel={handleCancelUpdate}
+        onSnooze={handleSnoozeUpdate}
+        onSkipVersion={handleSkipVersion}
       />
 
       {/* Routing Mode Settings Modal (Tunnel / Proxy / Bridge) */}

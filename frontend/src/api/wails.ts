@@ -139,7 +139,7 @@ export const api = {
     if (app) return app.GetAppInfo();
     return {
       name: 'Kite',
-      version: '1.1.0',
+      version: '1.1.1',
       repoUrl: 'https://github.com/KiteXRay/desktop',
       os: 'linux',
       arch: 'amd64',
@@ -364,6 +364,13 @@ export const api = {
       return app.InstallUpdate(assetUrl, releaseUrl);
     }
     window.open(releaseUrl, '_blank');
+  },
+
+  async cancelUpdate(): Promise<void> {
+    const app = getApp() as any;
+    if (app?.CancelUpdate) {
+      return app.CancelUpdate();
+    }
   },
 
   onUpdateProgress(callback: (progress: UpdateProgress) => void): () => void {

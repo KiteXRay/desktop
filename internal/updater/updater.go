@@ -2,8 +2,11 @@ package updater
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,9 +19,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/KiteXRay/desktop/internal/osspecific/root"
+	"golang.org/x/mod/semver"
 )
 
 type GitHubReleaseAsset struct {
@@ -48,7 +53,17 @@ type ReleaseInfo struct {
 	AssetURL     string `json:"assetUrl"`
 	AssetName    string `json:"assetName"`
 	AssetSize    int64  `json:"assetSize"`
+	ChecksumURL  string `json:"checksumUrl,omitempty"`
+	ExpectedSHA  string `json:"expectedSha,omitempty"`
 }
+
+var (
+	cacheMu           sync.Mutex
+	cachedReleaseInfo *ReleaseInfo
+	cachedETag        string
+	cachedRepo        string
+	cachedTime        time.Time
+)
 
 func parseVersion(v string) []int {
 	v = strings.TrimSpace(v)
@@ -69,7 +84,41 @@ func parseVersion(v string) []int {
 	return nums
 }
 
+func normalizeSemVer(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	if !strings.HasPrefix(v, "v") && !strings.HasPrefix(v, "V") {
+		v = "v" + v
+	} else if strings.HasPrefix(v, "V") {
+		v = "v" + v[1:]
+	}
+	parts := strings.SplitN(v, "-", 2)
+	base := parts[0]
+	dots := strings.Count(base, ".")
+	if dots == 0 {
+		base += ".0.0"
+	} else if dots == 1 {
+		base += ".0"
+	}
+	if len(parts) > 1 {
+		v = base + "-" + parts[1]
+	} else {
+		v = base
+	}
+	return v
+}
+
 func IsNewerVersion(latest, current string) bool {
+	normLatest := normalizeSemVer(latest)
+	normCurrent := normalizeSemVer(current)
+
+	if semver.IsValid(normLatest) && semver.IsValid(normCurrent) {
+		return semver.Compare(normLatest, normCurrent) > 0
+	}
+
+	// Fallback to legacy numeric slice comparison (e.g. 4-part versions)
 	lNums := parseVersion(latest)
 	cNums := parseVersion(current)
 
@@ -158,13 +207,20 @@ func SelectAsset(assets []GitHubReleaseAsset, goos, goarch string) *GitHubReleas
 			if strings.Contains(name, goarch) || (goarch == "amd64" && (strings.Contains(name, "x86_64") || strings.Contains(name, "x64"))) {
 				score += 10
 			}
-			if isDebian() && strings.HasSuffix(name, ".deb") {
-				score += 25
-			} else if strings.HasSuffix(name, ".deb") {
-				score += 8
-			}
-			if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") {
-				score += 5
+			if isDebian() {
+				if strings.HasSuffix(name, ".deb") {
+					score += 25
+				} else if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") {
+					score += 10
+				}
+			} else {
+				// Non-Debian: skip .deb packages entirely so they are never picked
+				if strings.HasSuffix(name, ".deb") {
+					continue
+				}
+				if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") {
+					score += 25
+				}
 			}
 		case "darwin":
 			if strings.HasSuffix(name, ".exe") || strings.Contains(name, "linux") {
@@ -190,6 +246,69 @@ func SelectAsset(assets []GitHubReleaseAsset, goos, goarch string) *GitHubReleas
 	return bestAsset
 }
 
+func FindChecksumAsset(assets []GitHubReleaseAsset, targetAssetName string) *GitHubReleaseAsset {
+	targetBase := strings.ToLower(targetAssetName)
+	for i := range assets {
+		name := strings.ToLower(assets[i].Name)
+		if name == targetBase+".sha256" || name == targetBase+".sha256sum" {
+			return &assets[i]
+		}
+	}
+	for i := range assets {
+		name := strings.ToLower(assets[i].Name)
+		if name == "checksums.txt" || name == "sha256sums" || name == "sha256sums.txt" {
+			return &assets[i]
+		}
+	}
+	return nil
+}
+
+func ParseExpectedChecksum(content, targetAssetName string) string {
+	lines := strings.Split(content, "\n")
+	targetBase := filepath.Base(targetAssetName)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			hash := fields[0]
+			file := strings.TrimPrefix(fields[1], "*")
+			file = filepath.Base(file)
+			if strings.EqualFold(file, targetBase) && len(hash) == 64 {
+				return strings.ToLower(hash)
+			}
+		} else if len(fields) == 1 && len(fields[0]) == 64 {
+			return strings.ToLower(fields[0])
+		}
+	}
+	return ""
+}
+
+func VerifyFileSHA256(filePath, expectedSHA string) error {
+	expectedSHA = strings.ToLower(strings.TrimSpace(expectedSHA))
+	if expectedSHA == "" {
+		return nil
+	}
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("open file for checksum verification: %w", err)
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return fmt.Errorf("calculate sha256: %w", err)
+	}
+	actualSHA := hex.EncodeToString(h.Sum(nil))
+	if !strings.EqualFold(actualSHA, expectedSHA) {
+		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedSHA, actualSHA)
+	}
+	return nil
+}
+
 func CheckForUpdate(ctx context.Context, repo string, currentVersion string) (*ReleaseInfo, error) {
 	repoPath := strings.TrimPrefix(repo, "https://github.com/")
 	repoPath = strings.TrimPrefix(repoPath, "http://github.com/")
@@ -200,6 +319,20 @@ func CheckForUpdate(ctx context.Context, repo string, currentVersion string) (*R
 		repoPath = "KiteXRay/desktop"
 	}
 
+	cacheMu.Lock()
+	if cachedRepo == repoPath && cachedReleaseInfo != nil && time.Since(cachedTime) < 5*time.Minute {
+		info := *cachedReleaseInfo
+		info.CurrentVer = currentVersion
+		info.Available = IsNewerVersion(info.LatestVer, currentVersion)
+		cacheMu.Unlock()
+		return &info, nil
+	}
+	reqETag := ""
+	if cachedRepo == repoPath {
+		reqETag = cachedETag
+	}
+	cacheMu.Unlock()
+
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repoPath)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
@@ -208,6 +341,9 @@ func CheckForUpdate(ctx context.Context, repo string, currentVersion string) (*R
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "Kite-Desktop-Updater")
+	if reqETag != "" {
+		req.Header.Set("If-None-Match", reqETag)
+	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -216,11 +352,31 @@ func CheckForUpdate(ctx context.Context, repo string, currentVersion string) (*R
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotModified {
+		cacheMu.Lock()
+		if cachedReleaseInfo != nil {
+			cachedTime = time.Now()
+			info := *cachedReleaseInfo
+			info.CurrentVer = currentVersion
+			info.Available = IsNewerVersion(info.LatestVer, currentVersion)
+			cacheMu.Unlock()
+			return &info, nil
+		}
+		cacheMu.Unlock()
+	}
+
 	if resp.StatusCode == http.StatusNotFound {
 		return &ReleaseInfo{
 			Available:  false,
 			CurrentVer: currentVersion,
 		}, nil
+	}
+
+	if resp.StatusCode == http.StatusForbidden {
+		if resp.Header.Get("X-RateLimit-Remaining") == "0" {
+			return nil, errors.New("GitHub API rate limit exceeded. Please try again later.")
+		}
+		return nil, fmt.Errorf("github api returned status %d", resp.StatusCode)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -248,9 +404,29 @@ func CheckForUpdate(ctx context.Context, repo string, currentVersion string) (*R
 		info.AssetURL = matchedAsset.BrowserDownloadURL
 		info.AssetName = matchedAsset.Name
 		info.AssetSize = matchedAsset.Size
+
+		if chkAsset := FindChecksumAsset(rel.Assets, matchedAsset.Name); chkAsset != nil {
+			info.ChecksumURL = chkAsset.BrowserDownloadURL
+			chkReq, errChk := http.NewRequestWithContext(ctx, "GET", chkAsset.BrowserDownloadURL, nil)
+			if errChk == nil {
+				chkReq.Header.Set("User-Agent", "Kite-Desktop-Updater")
+				if chkResp, errDo := client.Do(chkReq); errDo == nil && chkResp.StatusCode == http.StatusOK {
+					chkBytes, _ := io.ReadAll(io.LimitReader(chkResp.Body, 64*1024))
+					chkResp.Body.Close()
+					info.ExpectedSHA = ParseExpectedChecksum(string(chkBytes), matchedAsset.Name)
+				}
+			}
+		}
 	} else {
 		info.AssetURL = rel.HTMLURL
 	}
+
+	cacheMu.Lock()
+	cachedRepo = repoPath
+	cachedETag = resp.Header.Get("ETag")
+	cachedTime = time.Now()
+	cachedReleaseInfo = info
+	cacheMu.Unlock()
 
 	return info, nil
 }
@@ -313,6 +489,7 @@ func DownloadFile(ctx context.Context, downloadURL, destPath string, progressFn 
 }
 
 func ExtractTarGz(tarGzPath, destDir string) (string, error) {
+	destDir = filepath.Clean(destDir)
 	file, err := os.Open(tarGzPath)
 	if err != nil {
 		return "", err
@@ -325,7 +502,9 @@ func ExtractTarGz(tarGzPath, destDir string) (string, error) {
 	}
 	defer gzr.Close()
 
-	tr := tar.NewReader(gzr)
+	// Guard against decompression bombs (max 500 MB)
+	limitedReader := io.LimitReader(gzr, 500*1024*1024)
+	tr := tar.NewReader(limitedReader)
 	var kiteBinPath string
 
 	for {
@@ -338,10 +517,15 @@ func ExtractTarGz(tarGzPath, destDir string) (string, error) {
 		}
 
 		cleanName := filepath.Clean(header.Name)
-		if strings.HasPrefix(cleanName, "..") {
+		// Reject absolute paths or traversal
+		if filepath.IsAbs(cleanName) || strings.HasPrefix(cleanName, "..") {
 			continue
 		}
 		target := filepath.Join(destDir, cleanName)
+		rel, err := filepath.Rel(destDir, target)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
@@ -352,7 +536,11 @@ func ExtractTarGz(tarGzPath, destDir string) (string, error) {
 			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 				return "", err
 			}
-			outFile, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, header.FileInfo().Mode())
+			mode := header.FileInfo().Mode() & 0755
+			if mode == 0 {
+				mode = 0644
+			}
+			outFile, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, mode)
 			if err != nil {
 				return "", err
 			}
@@ -373,6 +561,89 @@ func ExtractTarGz(tarGzPath, destDir string) (string, error) {
 	}
 
 	return kiteBinPath, nil
+}
+
+func ExtractZip(zipPath, destDir string) (string, error) {
+	destDir = filepath.Clean(destDir)
+	r, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+
+	var appBundlePath string
+	for _, f := range r.File {
+		cleanName := filepath.Clean(f.Name)
+		if filepath.IsAbs(cleanName) || strings.HasPrefix(cleanName, "..") {
+			continue
+		}
+		target := filepath.Join(destDir, cleanName)
+		rel, err := filepath.Rel(destDir, target)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return "", err
+			}
+			if strings.HasSuffix(cleanName, ".app") && appBundlePath == "" {
+				appBundlePath = target
+			}
+			continue
+		}
+
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return "", err
+		}
+
+		rc, err := f.Open()
+		if err != nil {
+			return "", err
+		}
+		mode := f.FileInfo().Mode() & 0755
+		if mode == 0 {
+			mode = 0644
+		}
+		outFile, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, mode)
+		if err != nil {
+			rc.Close()
+			return "", err
+		}
+		_, err = io.Copy(outFile, io.LimitReader(rc, 500*1024*1024))
+		outFile.Close()
+		rc.Close()
+		if err != nil {
+			return "", err
+		}
+	}
+
+	if appBundlePath == "" {
+		entries, _ := os.ReadDir(destDir)
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".app") {
+				appBundlePath = filepath.Join(destDir, e.Name())
+				break
+			}
+		}
+	}
+
+	return appBundlePath, nil
+}
+
+func findEnclosingAppBundle(exePath string) string {
+	curr := exePath
+	for {
+		if strings.HasSuffix(curr, ".app") {
+			return curr
+		}
+		parent := filepath.Dir(curr)
+		if parent == curr || parent == "." || parent == "/" {
+			break
+		}
+		curr = parent
+	}
+	return ""
 }
 
 func ApplyDownloadedUpdate(downloadedFilePath, releaseURL string, onPreQuit func()) error {
@@ -420,10 +691,13 @@ func ApplyDownloadedUpdate(downloadedFilePath, releaseURL string, onPreQuit func
 		}
 
 		if strings.HasSuffix(downloadedFilePath, ".tar.gz") || strings.HasSuffix(downloadedFilePath, ".tgz") {
-			tmpExtract := filepath.Join(os.TempDir(), fmt.Sprintf("kite_update_%d", time.Now().UnixNano()))
-			if err := os.MkdirAll(tmpExtract, 0755); err != nil {
+			tmpExtract, err := os.MkdirTemp("", "kite_update_*")
+			if err != nil {
 				return fmt.Errorf("failed to create temp extraction directory: %w", err)
 			}
+			_ = os.Chmod(tmpExtract, 0700)
+			defer os.RemoveAll(tmpExtract)
+
 			newBinary, err := ExtractTarGz(downloadedFilePath, tmpExtract)
 			if err != nil {
 				return fmt.Errorf("failed to extract update archive: %w", err)
@@ -437,7 +711,7 @@ func ApplyDownloadedUpdate(downloadedFilePath, releaseURL string, onPreQuit func
 				currentExe = realPath
 			}
 
-			// Check if we can write to currentExe directory without root
+			// Check if we can write directly without root
 			canWriteDirectly := false
 			testFile, errTest := os.CreateTemp(filepath.Dir(currentExe), ".write_test_*")
 			if errTest == nil {
@@ -447,11 +721,14 @@ func ApplyDownloadedUpdate(downloadedFilePath, releaseURL string, onPreQuit func
 			}
 
 			if canWriteDirectly {
-				// Direct in-place update (e.g. running from user home directory)
 				tmpNew := currentExe + ".new"
 				_ = os.Remove(tmpNew)
 				if errCopy := copyFile(newBinary, tmpNew, 0755); errCopy == nil {
 					if errRename := os.Rename(tmpNew, currentExe); errRename == nil {
+						// Re-assign network capabilities if setcap is available
+						if setcapPath, errCap := exec.LookPath("setcap"); errCap == nil {
+							_ = exec.Command(setcapPath, "cap_net_raw,cap_net_admin,cap_net_bind_service+eip", currentExe).Run()
+						}
 						slog.Info("In-place update successful, restarting Kite...", "path", currentExe)
 						if onPreQuit != nil {
 							onPreQuit()
@@ -471,7 +748,7 @@ CUR_EXE=%q
 
 mkdir -p /opt/kite
 
-# Atomically replace /opt/kite/kite without truncating running inode (avoids Text file busy)
+# Atomically replace /opt/kite/kite without truncating running inode
 cp -f "$NEW_BIN" /opt/kite/kite.new
 chmod 755 /opt/kite/kite.new
 mv -f /opt/kite/kite.new /opt/kite/kite
@@ -563,6 +840,60 @@ fi
 		return fmt.Errorf("unrecognized package format for Linux update: %s", downloadedFilePath)
 
 	case "darwin":
+		if strings.HasSuffix(downloadedFilePath, ".zip") {
+			tmpExtract, err := os.MkdirTemp("", "kite_mac_update_*")
+			if err != nil {
+				return fmt.Errorf("create temp extraction directory: %w", err)
+			}
+			_ = os.Chmod(tmpExtract, 0700)
+			defer os.RemoveAll(tmpExtract)
+
+			appBundle, err := ExtractZip(downloadedFilePath, tmpExtract)
+			if err != nil {
+				return fmt.Errorf("extract macos update archive: %w", err)
+			}
+			if appBundle == "" {
+				return errors.New("no .app bundle found in macOS update archive")
+			}
+
+			currentExe, _ := os.Executable()
+			targetApp := findEnclosingAppBundle(currentExe)
+			if targetApp == "" {
+				targetApp = "/Applications/Kite.app"
+			}
+
+			slog.Info("Applying macOS update...", "source", appBundle, "target", targetApp)
+
+			var installErr error
+			testFile, errTest := os.CreateTemp(filepath.Dir(targetApp), ".write_test_*")
+			if errTest == nil {
+				_ = testFile.Close()
+				_ = os.Remove(testFile.Name())
+				cmd := exec.Command("ditto", appBundle, targetApp)
+				if out, errDitto := cmd.CombinedOutput(); errDitto != nil {
+					installErr = fmt.Errorf("ditto copy failed: %s (%w)", string(out), errDitto)
+				}
+			} else {
+				script := fmt.Sprintf(`do shell script "ditto %q %q" with administrator privileges`, appBundle, targetApp)
+				cmd := exec.Command("osascript", "-e", script)
+				if out, errOSA := cmd.CombinedOutput(); errOSA != nil {
+					installErr = fmt.Errorf("osascript admin install failed: %s (%w)", string(out), errOSA)
+				}
+			}
+
+			if installErr != nil {
+				return installErr
+			}
+
+			slog.Info("macOS update applied, relaunching application...", "app", targetApp)
+			if onPreQuit != nil {
+				onPreQuit()
+			}
+			_ = exec.Command("open", "-n", targetApp).Start()
+			os.Exit(0)
+			return nil
+		}
+
 		_ = exec.Command("open", "-R", downloadedFilePath).Start()
 		return nil
 

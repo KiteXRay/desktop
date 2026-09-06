@@ -37,7 +37,10 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 
       - name: Build Application
-        run: wails build -tags webkit2_41 -skipbindings
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
+          wails build -tags webkit2_41 -skipbindings -ldflags "-X main.appVersion=${VERSION}"
 
       - name: Package Release Archive
         run: |
@@ -57,6 +60,10 @@ jobs:
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
           ./scripts/package_deb.sh "$VERSION" amd64
 
+      - name: Generate Checksums
+        run: |
+          sha256sum kite-linux-amd64.tar.gz build/bin/*.deb > checksums-linux.txt
+
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
@@ -65,6 +72,7 @@ jobs:
           files: |
             kite-linux-amd64.tar.gz
             build/bin/*.deb
+            checksums-linux.txt
 
   release-windows:
     name: Build Windows (amd64)
@@ -104,7 +112,11 @@ jobs:
           makensis /VERSION
 
       - name: Build Application with NSIS Installer
-        run: wails build -platform windows/amd64 -nsis -skipbindings
+        shell: pwsh
+        run: |
+          $ver = "${env:GITHUB_REF_NAME}".TrimStart("v")
+          if (-not $ver -or $ver -eq "main") { $ver = "1.1.0" }
+          wails build -platform windows/amd64 -nsis -skipbindings -ldflags "-X main.appVersion=$ver"
 
       - name: Package Portable Zip
         shell: bash
@@ -115,6 +127,11 @@ jobs:
           cp README.md LICENSE release-win/
           cd release-win && 7z a -tzip ../kite-windows-amd64.zip *
 
+      - name: Generate Checksums
+        shell: bash
+        run: |
+          sha256sum build/bin/*installer.exe kite-windows-amd64.zip > checksums-windows.txt
+
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
@@ -122,6 +139,7 @@ jobs:
           files: |
             build/bin/*installer.exe
             kite-windows-amd64.zip
+            checksums-windows.txt
 
   release-macos:
     name: Build macOS (universal)
@@ -145,7 +163,10 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 
       - name: Build Application
-        run: wails build -platform darwin/universal -skipbindings
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
+          wails build -platform darwin/universal -skipbindings -ldflags "-X main.appVersion=${VERSION}"
 
       - name: Package Release
         run: |
@@ -158,8 +179,14 @@ jobs:
             zip -r ../../kite-macos-universal.zip *.app
           fi
 
+      - name: Generate Checksums
+        run: |
+          shasum -a 256 kite-macos-universal.zip > checksums-macos.txt
+
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: kite-macos-universal.zip
+          files: |
+            kite-macos-universal.zip
+            checksums-macos.txt

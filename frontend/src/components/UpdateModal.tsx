@@ -9,6 +9,9 @@ interface UpdateModalProps {
   progress: UpdateProgress | null;
   onClose: () => void;
   onInstall: (assetUrl: string, releaseUrl: string) => void;
+  onCancel?: () => void;
+  onSnooze?: () => void;
+  onSkipVersion?: (version: string) => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -25,6 +28,9 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   progress,
   onClose,
   onInstall,
+  onCancel,
+  onSnooze,
+  onSkipVersion,
 }) => {
   if (!isOpen || !updateInfo) return null;
 
@@ -157,47 +163,81 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
         )}
 
         {/* Action Buttons */}
-        <div className="flex items-center justify-end gap-2.5 pt-1">
-          {!isBusy && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition-colors cursor-pointer"
-            >
-              Later
-            </button>
-          )}
-
-          {updateInfo.releaseUrl && (
-            <button
-              type="button"
-              onClick={() => window.open(updateInfo.releaseUrl, '_blank')}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition-colors cursor-pointer"
-              title="View on GitHub"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span>Release Notes</span>
-            </button>
-          )}
-
-          <button
-            type="button"
-            disabled={isBusy}
-            onClick={() => onInstall(updateInfo.assetUrl, updateInfo.releaseUrl)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-xs font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all cursor-pointer"
-          >
-            {isBusy ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Updating...</span>
-              </>
-            ) : (
-              <>
-                <Download className="w-3.5 h-3.5" />
-                <span>Install Update</span>
-              </>
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+          <div className="flex items-center gap-2">
+            {!isBusy && onSkipVersion && (
+              <button
+                type="button"
+                onClick={() => onSkipVersion(updateInfo.latestVersion)}
+                className="px-2.5 py-1.5 text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                title="Don't prompt for this version again"
+              >
+                Skip version
+              </button>
             )}
-          </button>
+            {!isBusy && onSnooze && (
+              <button
+                type="button"
+                onClick={onSnooze}
+                className="px-2.5 py-1.5 text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                title="Remind me tomorrow"
+              >
+                Remind tomorrow
+              </button>
+            )}
+            {isDownloading && onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="px-3 py-1.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/50 text-xs font-medium text-rose-300 border border-rose-700/50 transition-colors cursor-pointer"
+              >
+                Cancel Download
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {!isBusy && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition-colors cursor-pointer"
+              >
+                Later
+              </button>
+            )}
+
+            {updateInfo.releaseUrl && (
+              <button
+                type="button"
+                onClick={() => window.open(updateInfo.releaseUrl, '_blank')}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition-colors cursor-pointer"
+                title="View on GitHub"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Notes</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() => onInstall(updateInfo.assetUrl, updateInfo.releaseUrl)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-xs font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all cursor-pointer"
+            >
+              {isBusy ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Updating...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Install Update</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
       </div>
