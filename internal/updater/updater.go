@@ -97,6 +97,18 @@ func IsNewerVersion(latest, current string) bool {
 	return false
 }
 
+var isDebian = isDebianSystem
+
+func isDebianSystem() bool {
+	if _, err := os.Stat("/etc/debian_version"); err == nil {
+		return true
+	}
+	if _, err := exec.LookPath("dpkg"); err == nil {
+		return true
+	}
+	return false
+}
+
 func SelectAsset(assets []GitHubReleaseAsset, goos, goarch string) *GitHubReleaseAsset {
 	if len(assets) == 0 {
 		return nil
@@ -114,6 +126,12 @@ func SelectAsset(assets []GitHubReleaseAsset, goos, goarch string) *GitHubReleas
 			if !strings.HasSuffix(name, ".exe") && !strings.HasSuffix(name, ".zip") {
 				continue
 			}
+			if goarch == "amd64" && (strings.Contains(name, "arm64") || strings.Contains(name, "arm")) {
+				continue
+			}
+			if goarch == "arm64" && (strings.Contains(name, "amd64") || strings.Contains(name, "x64")) {
+				continue
+			}
 			if strings.Contains(name, "windows") || strings.Contains(name, "win") || strings.HasSuffix(name, ".exe") {
 				score += 10
 			}
@@ -127,11 +145,23 @@ func SelectAsset(assets []GitHubReleaseAsset, goos, goarch string) *GitHubReleas
 			if strings.HasSuffix(name, ".exe") || strings.HasSuffix(name, ".dmg") {
 				continue
 			}
+			// Skip wrong architectures
+			if goarch == "amd64" && (strings.Contains(name, "arm64") || strings.Contains(name, "aarch64") || strings.Contains(name, "armv")) {
+				continue
+			}
+			if goarch == "arm64" && (strings.Contains(name, "amd64") || strings.Contains(name, "x86_64") || strings.Contains(name, "x64")) {
+				continue
+			}
 			if strings.Contains(name, "linux") {
 				score += 10
 			}
-			if strings.Contains(name, goarch) {
+			if strings.Contains(name, goarch) || (goarch == "amd64" && (strings.Contains(name, "x86_64") || strings.Contains(name, "x64"))) {
 				score += 10
+			}
+			if isDebian() && strings.HasSuffix(name, ".deb") {
+				score += 25
+			} else if strings.HasSuffix(name, ".deb") {
+				score += 8
 			}
 			if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") {
 				score += 5
@@ -365,6 +395,7 @@ func ApplyDownloadedUpdate(downloadedFilePath, releaseURL string, onPreQuit func
 
 	case "linux":
 		if strings.HasSuffix(downloadedFilePath, ".deb") {
+			_ = os.Chmod(downloadedFilePath, 0644)
 			slog.Info("Installing Debian package via pkexec...", "path", downloadedFilePath)
 			cmd := exec.Command("pkexec", "dpkg", "-i", downloadedFilePath)
 			out, err := cmd.CombinedOutput()
@@ -379,7 +410,13 @@ func ApplyDownloadedUpdate(downloadedFilePath, releaseURL string, onPreQuit func
 			if onPreQuit != nil {
 				onPreQuit()
 			}
-			return root.RelaunchApp("/opt/kite/kite")
+			targetExe := "/opt/kite/kite"
+			if _, err := os.Stat(targetExe); err != nil {
+				if currentExe, errExe := os.Executable(); errExe == nil {
+					targetExe = currentExe
+				}
+			}
+			return root.RelaunchApp(targetExe)
 		}
 
 		if strings.HasSuffix(downloadedFilePath, ".tar.gz") || strings.HasSuffix(downloadedFilePath, ".tgz") {

@@ -22,4 +22,5 @@
 #### 3. UI & Connection Enhancements
 - Expanded Reality Flow options (`xtls-rprx-vision`, `xtls-rprx-vision-udp443`), protocols, transports, and XHTTP modes.
 - Streamlined profile cards and details view.
+- Seamless Linux in-app updates: automatic installation and relaunch for Debian/Ubuntu (.deb) and Linux archives (.tar.gz).
 - Faster, more resilient connection handling across all platforms.

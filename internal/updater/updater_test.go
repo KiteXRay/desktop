@@ -53,4 +53,26 @@ func TestSelectAsset(t *testing.T) {
 	if macAsset == nil || macAsset.Name != "kite-macos-universal.zip" {
 		t.Errorf("expected macos asset, got %v", macAsset)
 	}
+
+	// Test Debian preference for .deb
+	origIsDebian := isDebian
+	defer func() { isDebian = origIsDebian }()
+
+	mixedAssets := []GitHubReleaseAsset{
+		{Name: "kite-linux-amd64.tar.gz", BrowserDownloadURL: "https://example.com/kite-linux-amd64.tar.gz"},
+		{Name: "kite_1.1.0_amd64.deb", BrowserDownloadURL: "https://example.com/kite_1.1.0_amd64.deb"},
+		{Name: "kite_1.1.0_arm64.deb", BrowserDownloadURL: "https://example.com/kite_1.1.0_arm64.deb"},
+	}
+
+	isDebian = func() bool { return true }
+	debAsset := SelectAsset(mixedAssets, "linux", "amd64")
+	if debAsset == nil || debAsset.Name != "kite_1.1.0_amd64.deb" {
+		t.Errorf("expected deb asset on debian amd64, got %v", debAsset)
+	}
+
+	isDebian = func() bool { return false }
+	tarAsset := SelectAsset(mixedAssets, "linux", "amd64")
+	if tarAsset == nil || tarAsset.Name != "kite-linux-amd64.tar.gz" {
+		t.Errorf("expected tar.gz asset on non-debian amd64, got %v", tarAsset)
+	}
 }
