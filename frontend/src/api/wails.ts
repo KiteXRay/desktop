@@ -1,4 +1,4 @@
-import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO, PingResultDTO } from '../types';
+import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO, PingResultDTO, Subscription, BridgeRule, AddResultDTO } from '../types';
 
 declare global {
   interface Window {
@@ -19,9 +19,21 @@ declare global {
           GetStats(id: string): Promise<StatsDTO>;
           GetAppInfo(): Promise<AppInfoDTO>;
           OpenURL(url: string): Promise<void>;
+          GetClipboardText(): Promise<string>;
           ParseLinkPreview(link: string): Promise<Record<string, string>>;
           GetTunnelMode(): Promise<string>;
           SetTunnelMode(mode: string): Promise<void>;
+          GetTunnelSettings(): Promise<[string, string]>;
+          SetTunnelSettings(deviceIP: string, dns: string): Promise<void>;
+          AddConnectionOrSubscription(input: string, label: string): Promise<import('../types').AddResultDTO>;
+          GetSubscriptions(): Promise<import('../types').Subscription[]>;
+          UpdateSubscription(id: string): Promise<void>;
+          DeleteSubscription(id: string): Promise<void>;
+          UpdateAllSubscriptions(): Promise<void>;
+          GetBridgeRules(): Promise<import('../types').BridgeRule[]>;
+          SaveBridgeRules(rules: import('../types').BridgeRule[]): Promise<void>;
+          CheckRunningBridgeProcesses(): Promise<Record<string, number>>;
+          LaunchBridgeRule(ruleID: string, exePath: string): Promise<void>;
           GetProxyEndpoints(): Promise<ProxyEndpointsDTO>;
           GetInstalledApps(): Promise<InstalledApp[]>;
           SetSystemProxy(enabled: boolean): Promise<void>;
@@ -127,7 +139,7 @@ export const api = {
     if (app) return app.GetAppInfo();
     return {
       name: 'Kite',
-      version: '1.0.2',
+      version: '1.1.0',
       repoUrl: 'https://github.com/KiteXRay/desktop',
       os: 'linux',
       arch: 'amd64',
@@ -141,6 +153,23 @@ export const api = {
       return app.OpenURL(url);
     }
     window.open(url, '_blank');
+  },
+
+  async getClipboardText(): Promise<string> {
+    const app = getApp();
+    if (app?.GetClipboardText) {
+      try {
+        const text = await app.GetClipboardText();
+        if (text) return text;
+      } catch {
+        // Fallback below
+      }
+    }
+    try {
+      return await navigator.clipboard.readText();
+    } catch {
+      return '';
+    }
   },
 
   async parseLinkPreview(link: string): Promise<Record<string, string>> {
@@ -164,6 +193,75 @@ export const api = {
   async setTunnelMode(mode: string): Promise<void> {
     const app = getApp();
     if (app?.SetTunnelMode) return app.SetTunnelMode(mode);
+  },
+
+  async getTunnelSettings(): Promise<{ deviceIP: string; dns: string }> {
+    const app = getApp();
+    if (app?.GetTunnelSettings) {
+      const res = await app.GetTunnelSettings();
+      if (Array.isArray(res) && res.length >= 2) {
+        return { deviceIP: res[0] || '192.18.0.1', dns: res[1] || '8.8.8.8' };
+      }
+    }
+    return { deviceIP: '192.18.0.1', dns: '8.8.8.8' };
+  },
+
+  async setTunnelSettings(deviceIP: string, dns: string): Promise<void> {
+    const app = getApp();
+    if (app?.SetTunnelSettings) return app.SetTunnelSettings(deviceIP, dns);
+  },
+
+  async addConnectionOrSubscription(input: string, label: string = ''): Promise<AddResultDTO> {
+    const app = getApp();
+    if (app?.AddConnectionOrSubscription) {
+      return app.AddConnectionOrSubscription(input, label);
+    }
+    // Fallback
+    const conn = await app?.AddConnection(label || 'Server', input);
+    return { type: 'connection', connection: conn };
+  },
+
+  async getSubscriptions(): Promise<Subscription[]> {
+    const app = getApp();
+    if (app?.GetSubscriptions) return app.GetSubscriptions();
+    return [];
+  },
+
+  async updateSubscription(id: string): Promise<void> {
+    const app = getApp();
+    if (app?.UpdateSubscription) return app.UpdateSubscription(id);
+  },
+
+  async deleteSubscription(id: string): Promise<void> {
+    const app = getApp();
+    if (app?.DeleteSubscription) return app.DeleteSubscription(id);
+  },
+
+  async updateAllSubscriptions(): Promise<void> {
+    const app = getApp();
+    if (app?.UpdateAllSubscriptions) return app.UpdateAllSubscriptions();
+  },
+
+  async getBridgeRules(): Promise<BridgeRule[]> {
+    const app = getApp();
+    if (app?.GetBridgeRules) return app.GetBridgeRules();
+    return [];
+  },
+
+  async saveBridgeRules(rules: BridgeRule[]): Promise<void> {
+    const app = getApp();
+    if (app?.SaveBridgeRules) return app.SaveBridgeRules(rules);
+  },
+
+  async checkRunningBridgeProcesses(): Promise<Record<string, number>> {
+    const app = getApp();
+    if (app?.CheckRunningBridgeProcesses) return app.CheckRunningBridgeProcesses();
+    return {};
+  },
+
+  async launchBridgeRule(ruleID: string, exePath: string = ''): Promise<void> {
+    const app = getApp();
+    if (app?.LaunchBridgeRule) return app.LaunchBridgeRule(ruleID, exePath);
   },
 
   async getProxyEndpoints(): Promise<ProxyEndpointsDTO> {

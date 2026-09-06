@@ -14,6 +14,7 @@ import (
 	vpn "github.com/goxray/core/client"
 	xrayproto "github.com/lilendian0x00/xray-knife/v3/pkg/protocol"
 	xray3 "github.com/lilendian0x00/xray-knife/v3/pkg/xray"
+	tproxy "github.com/xjasonlyu/tun2socks/v2/proxy"
 
 	"github.com/KiteXRay/desktop/internal/netchart"
 )
@@ -24,16 +25,19 @@ type Client interface {
 	Disconnect(context.Context) error
 	BytesRead() int
 	BytesWritten() int
+	SetTunnelSettings(deviceIP, dns string)
+	SetBridgeDialerFactory(fn func(defaultSocksAddr string) tproxy.Dialer)
 }
 
 // Item is a combine that is passed (via interface segregation) throughout the system to apply
 // centralized changes to connections with the smallest overhead as possible.
 type Item struct {
-	id         string
-	label      string
-	link       string
-	xconfigMap map[string]string
-	active     bool
+	id             string
+	subscriptionID string
+	label          string
+	link           string
+	xconfigMap     map[string]string
+	active         bool
 
 	parent   *Collection
 	client   Client
@@ -71,6 +75,21 @@ func (c *Item) ID() string {
 	return c.id
 }
 
+func (c *Item) SubscriptionID() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.subscriptionID
+}
+
+func (c *Item) SetSubscriptionID(id string) {
+	c.mu.Lock()
+	c.subscriptionID = id
+	c.mu.Unlock()
+	if c.parent != nil {
+		c.parent.onChange()
+	}
+}
+
 func (c *Item) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -100,6 +119,9 @@ func (c *Item) init() error {
 		return fmt.Errorf("create vpn client: %v", err)
 	}
 	c.client = cl
+	if c.parent != nil && c.parent.bridgeDialerFactory != nil {
+		c.client.SetBridgeDialerFactory(c.parent.bridgeDialerFactory)
+	}
 
 	c.recorder = netchart.NewRecorder(c.client)
 	c.recorder.Start()
@@ -141,6 +163,22 @@ func (c *Item) ConnectWithMode(mode vpn.TunnelMode) error {
 
 func (c *Item) Disconnect() error {
 	return c.client.Disconnect(context.Background())
+}
+
+func (c *Item) SetTunnelSettings(deviceIP, dns string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.client != nil {
+		c.client.SetTunnelSettings(deviceIP, dns)
+	}
+}
+
+func (c *Item) SetBridgeDialerFactory(fn func(defaultSocksAddr string) tproxy.Dialer) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.client != nil {
+		c.client.SetBridgeDialerFactory(fn)
+	}
 }
 
 func (c *Item) Label() string {

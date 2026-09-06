@@ -40,9 +40,10 @@ var DefaultOpts = &Opts{
 
 // Pipe represents a pipe that connects io.ReadWriteCloser and sock5 proxy.
 type Pipe struct {
-	opts  *Opts
-	stack *stack.Stack
-	proxy proxy.Proxy
+	opts   *Opts
+	stack  *stack.Stack
+	proxy  proxy.Proxy
+	dialer proxy.Dialer
 }
 
 func NewPipe(opts *Opts) (*Pipe, error) {
@@ -70,8 +71,15 @@ func (p *Pipe) Copy(ctx context.Context, pipe io.ReadWriteCloser, socks5 string)
 		return fmt.Errorf("create socks proxy: %v", err)
 	}
 
-	// Set the proxy for tunnel
-	tunnel.T().SetDialer(p.proxy)
+	return p.CopyWithDialer(ctx, pipe, p.proxy)
+}
+
+// CopyWithDialer connects io.ReadWriteCloser to a custom proxy.Dialer (such as BridgeDialer).
+func (p *Pipe) CopyWithDialer(ctx context.Context, pipe io.ReadWriteCloser, d proxy.Dialer) error {
+	p.dialer = d
+
+	// Set the dialer for tunnel
+	tunnel.T().SetDialer(d)
 
 	// Set UDP timeout if UDP is enabled
 	if p.opts.UDP {

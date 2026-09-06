@@ -12,6 +12,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/vishvananda/netlink v1.3.1
 	github.com/wailsapp/wails/v2 v2.15.0
+	github.com/xjasonlyu/tun2socks/v2 v2.6.0
 	go.uber.org/mock v0.5.2
 	golang.org/x/net v0.56.0
 	golang.org/x/sys v0.46.0
@@ -67,7 +68,6 @@ require (
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
-	github.com/xjasonlyu/tun2socks/v2 v2.6.0 // indirect
 	github.com/xtls/reality v0.0.0-20250608132114-50752aec6bfb // indirect
 	github.com/xtls/xray-core v1.250608.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect

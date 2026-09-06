@@ -10,6 +10,10 @@ export function AddConnection(arg1, arg2) {
   return window['go']['main']['App']['AddConnection'](arg1, arg2);
 }
 
+export function AddConnectionOrSubscription(arg1, arg2) {
+  return window['go']['main']['App']['AddConnectionOrSubscription'](arg1, arg2);
+}
+
 export function BuildLinkFromConfig(arg1) {
   return window['go']['main']['App']['BuildLinkFromConfig'](arg1);
 }
@@ -20,6 +24,10 @@ export function CheckForUpdate() {
 
 export function CheckNetworkPrivileges() {
   return window['go']['main']['App']['CheckNetworkPrivileges']();
+}
+
+export function CheckRunningBridgeProcesses() {
+  return window['go']['main']['App']['CheckRunningBridgeProcesses']();
 }
 
 export function ClearStuckTun() {
@@ -34,12 +42,24 @@ export function DeleteConnection(arg1) {
   return window['go']['main']['App']['DeleteConnection'](arg1);
 }
 
+export function DeleteSubscription(arg1) {
+  return window['go']['main']['App']['DeleteSubscription'](arg1);
+}
+
 export function Disconnect() {
   return window['go']['main']['App']['Disconnect']();
 }
 
 export function GetAppInfo() {
   return window['go']['main']['App']['GetAppInfo']();
+}
+
+export function GetBridgeRules() {
+  return window['go']['main']['App']['GetBridgeRules']();
+}
+
+export function GetClipboardText() {
+  return window['go']['main']['App']['GetClipboardText']();
 }
 
 export function GetConnections() {
@@ -58,12 +78,20 @@ export function GetStats(arg1) {
   return window['go']['main']['App']['GetStats'](arg1);
 }
 
+export function GetSubscriptions() {
+  return window['go']['main']['App']['GetSubscriptions']();
+}
+
 export function GetSystemProxyStatus() {
   return window['go']['main']['App']['GetSystemProxyStatus']();
 }
 
 export function GetTunnelMode() {
   return window['go']['main']['App']['GetTunnelMode']();
+}
+
+export function GetTunnelSettings() {
+  return window['go']['main']['App']['GetTunnelSettings']();
 }
 
 export function GrantNetworkPrivileges() {
@@ -80,6 +108,10 @@ export function LaunchAndRouteApp(arg1, arg2) {
 
 export function LaunchAppWithProxy(arg1, arg2) {
   return window['go']['main']['App']['LaunchAppWithProxy'](arg1, arg2);
+}
+
+export function LaunchBridgeRule(arg1, arg2) {
+  return window['go']['main']['App']['LaunchBridgeRule'](arg1, arg2);
 }
 
 export function OpenURL(arg1) {
@@ -110,6 +142,10 @@ export function ResetTraffic(arg1) {
   return window['go']['main']['App']['ResetTraffic'](arg1);
 }
 
+export function SaveBridgeRules(arg1) {
+  return window['go']['main']['App']['SaveBridgeRules'](arg1);
+}
+
 export function SelectExecutableDialog() {
   return window['go']['main']['App']['SelectExecutableDialog']();
 }
@@ -126,10 +162,22 @@ export function SetTunnelMode(arg1) {
   return window['go']['main']['App']['SetTunnelMode'](arg1);
 }
 
+export function SetTunnelSettings(arg1, arg2) {
+  return window['go']['main']['App']['SetTunnelSettings'](arg1, arg2);
+}
+
 export function SwapConnections(arg1, arg2) {
   return window['go']['main']['App']['SwapConnections'](arg1, arg2);
 }
 
+export function UpdateAllSubscriptions() {
+  return window['go']['main']['App']['UpdateAllSubscriptions']();
+}
+
 export function UpdateConnection(arg1, arg2, arg3) {
   return window['go']['main']['App']['UpdateConnection'](arg1, arg2, arg3);
+}
+
+export function UpdateSubscription(arg1) {
+  return window['go']['main']['App']['UpdateSubscription'](arg1);
 }

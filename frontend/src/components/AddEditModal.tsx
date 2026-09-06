@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Clipboard,
-  ShieldCheck,
+  Link as LinkIcon,
+  Rss,
+  Check,
   AlertCircle,
   Loader2,
   Sliders,
@@ -11,10 +13,11 @@ import {
   Lock,
   Wifi,
   Shield,
+  ShieldCheck,
   Eye,
   EyeOff,
-  Check,
   ChevronDown,
+  Plus,
 } from 'lucide-react';
 import { api } from '../api/wails';
 import type { ConnectionDTO } from '../types';
@@ -56,9 +59,241 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
   onSuccess,
   editItem,
 }) => {
+  if (!isOpen) return null;
+
+  return editItem ? (
+    <EditProfileModalView
+      editItem={editItem}
+      onClose={onClose}
+      onSuccess={onSuccess}
+    />
+  ) : (
+    <AddProfileModalView
+      onClose={onClose}
+      onSuccess={onSuccess}
+    />
+  );
+};
+
+// ==========================================
+// 1. ADD PROFILE / SUBSCRIPTION MODAL VIEW
+// ==========================================
+interface AddProfileModalViewProps {
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+const AddProfileModalView: React.FC<AddProfileModalViewProps> = ({ onClose, onSuccess }) => {
+  const [inputLink, setInputLink] = useState('');
+  const [customLabel, setCustomLabel] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successInfo, setSuccessInfo] = useState<string | null>(null);
+
+  const trimmed = inputLink.trim();
+  const isSubscription = trimmed.startsWith('http://') || trimmed.startsWith('https://');
+  const isConnection = /^(vless|vmess|ss|trojan|tuic|hysteria2?|wireguard):\/\//i.test(trimmed);
+
+  const handlePaste = async () => {
+    try {
+      const text = await api.getClipboardText();
+      if (text) {
+        setInputLink(text.trim());
+        setError(null);
+      }
+    } catch {
+      // Fallback
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!trimmed) {
+      setError('Please enter a connection link or subscription URL');
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+    setSuccessInfo(null);
+
+    try {
+      const res = await api.addConnectionOrSubscription(trimmed, customLabel.trim());
+      if (res.type === 'subscription') {
+        setSuccessInfo(`Successfully imported subscription "${res.label || 'Subscription'}" with ${res.count || 0} server(s)!`);
+        setTimeout(() => {
+          onSuccess();
+          onClose();
+        }, 1200);
+      } else {
+        onSuccess();
+        onClose();
+      }
+    } catch (err: any) {
+      setError(err?.message || err?.toString() || 'Failed to import. Please check your link.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+      <div
+        className="w-full max-w-lg bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+              <Plus className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-100">
+                Add Profile or Subscription
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Paste a connection link (vless, vmess, trojan, ss) or subscription URL
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4">
+          {error && (
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs animate-in fade-in">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {successInfo && (
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs animate-in fade-in">
+              <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+              <span>{successInfo}</span>
+            </div>
+          )}
+
+          {/* Connection Link or Subscription URL */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                {isSubscription ? <Rss className="w-3.5 h-3.5 text-amber-400" /> : <LinkIcon className="w-3.5 h-3.5 text-indigo-400" />}
+                <span>Connection Link or Subscription URL</span>
+              </label>
+              <button
+                type="button"
+                onClick={handlePaste}
+                className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer transition-colors active:scale-95"
+              >
+                <Clipboard className="w-3.5 h-3.5" />
+                <span>Paste</span>
+              </button>
+            </div>
+
+            <textarea
+              value={inputLink}
+              onChange={e => setInputLink(e.target.value)}
+              placeholder="vless://..., vmess://..., trojan://..., ss://... or https://example.com/sub/..."
+              rows={3}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/70 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-100 placeholder-slate-600 text-xs font-mono transition-colors outline-hidden resize-none"
+              autoFocus
+            />
+
+            {/* Smart Detection Indicator */}
+            {trimmed && (
+              <div className="flex items-center gap-2 pt-1 text-[11px]">
+                {isSubscription ? (
+                  <span className="flex items-center gap-1.5 text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                    <Rss className="w-3 h-3" />
+                    Subscription URL (Will fetch and import all servers)
+                  </span>
+                ) : isConnection ? (
+                  <span className="flex items-center gap-1.5 text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
+                    <LinkIcon className="w-3 h-3" />
+                    Direct Connection Link ({trimmed.split('://')[0].toUpperCase()})
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-slate-400 bg-slate-800/40 px-2 py-0.5 rounded-md border border-slate-700/50">
+                    <AlertCircle className="w-3 h-3 text-slate-400" />
+                    Enter a valid link (vless/vmess/ss/trojan) or subscription URL (http/https)
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Profile Name (Optional) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Profile or Subscription Name <span className="text-slate-500 font-normal lowercase">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={customLabel}
+              onChange={e => setCustomLabel(e.target.value)}
+              placeholder={isSubscription ? 'e.g. My Premium Proxy Provider' : 'e.g. Frankfurt Fast, Home Server'}
+              className="w-full px-3.5 py-2 rounded-xl bg-slate-950/70 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden"
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800/80 mt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-xs font-medium text-slate-300 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading || !trimmed}
+              className="flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-50 rounded-xl transition-all shadow-lg shadow-indigo-600/20 cursor-pointer"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{isSubscription ? 'Importing Feed...' : 'Adding...'}</span>
+                </>
+              ) : (
+                <>
+                  {isSubscription ? <Rss className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                  <span>{isSubscription ? 'Import Subscription' : 'Add Profile'}</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// ==========================================
+// 2. EDIT PROFILE MODAL VIEW (FULL PARAMETERS FORM)
+// ==========================================
+interface EditProfileModalViewProps {
+  editItem: ConnectionDTO;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+const EditProfileModalView: React.FC<EditProfileModalViewProps> = ({
+  editItem,
+  onClose,
+  onSuccess,
+}) => {
   const [activeTab, setActiveTab] = useState<'form' | 'raw'>('form');
-  const [label, setLabel] = useState('');
-  const [link, setLink] = useState('');
+  const [label, setLabel] = useState(editItem.label || '');
+  const [link, setLink] = useState(editItem.link || '');
   const [params, setParams] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -69,54 +304,34 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
   const isUpdatingFromLinkRef = useRef(false);
 
   useEffect(() => {
-    if (!isOpen) return;
+    setLabel(editItem.label || '');
+    setLink(editItem.link || '');
 
-    if (editItem) {
-      setActiveTab('form');
-      setLabel(editItem.label);
-      setLink(editItem.link);
+    const initialMap: Record<string, string> = {
+      Protocol: editItem.protocol || 'vless',
+      Address: editItem.address || '',
+      Port: editItem.port || '',
+      Remark: editItem.label || '',
+      Security: editItem.security || editItem.tls || 'none',
+      Network: editItem.network || 'tcp',
+      Flow: editItem.flow || '',
+      ...(editItem.configMap || {}),
+    };
+    setParams(initialMap);
 
-      const initialMap: Record<string, string> = {
-        Protocol: editItem.protocol || 'vless',
-        Address: editItem.address || '',
-        Port: editItem.port || '',
-        Remark: editItem.label || '',
-        Security: editItem.security || editItem.tls || 'none',
-        Network: editItem.network || 'tcp',
-        Flow: editItem.flow || '',
-        ...(editItem.configMap || {}),
-      };
-      setParams(initialMap);
-
-      // Also parse latest from link
-      api.parseLinkPreview(editItem.link)
-        .then(parsed => {
-          setParams(prev => ({ ...prev, ...parsed }));
-        })
-        .catch(() => {});
-    } else {
-      setActiveTab('form');
-      setLabel('');
-      setLink('');
-      setParams({
-        Protocol: 'vless',
-        Address: '',
-        Port: '443',
-        Network: 'tcp',
-        Type: 'tcp',
-        Security: 'none',
-        TLS: 'none',
-      });
-    }
+    // Also parse latest from link
+    api.parseLinkPreview(editItem.link)
+      .then(parsed => {
+        setParams(prev => ({ ...prev, ...parsed }));
+      })
+      .catch(() => {});
     setError(null);
-  }, [editItem, isOpen]);
+  }, [editItem]);
 
   // Live link validation & parser when in raw tab
   useEffect(() => {
-    if (!isOpen || isUpdatingFromLinkRef.current) return;
-    if (!link.trim()) {
-      return;
-    }
+    if (isUpdatingFromLinkRef.current) return;
+    if (!link.trim()) return;
 
     const timer = setTimeout(async () => {
       try {
@@ -126,15 +341,13 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
         if (!label && parsed.Remark) {
           setLabel(parsed.Remark);
         }
-      } catch (err: any) {
+      } catch {
         // Link might be incomplete while typing
       }
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [link, isOpen]);
-
-  if (!isOpen) return null;
+  }, [link]);
 
   const updateParams = (updates: Record<string, string>) => {
     if (updates.Remark !== undefined) {
@@ -168,7 +381,7 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
 
   const handlePaste = async () => {
     try {
-      const text = await navigator.clipboard.readText();
+      const text = await api.getClipboardText();
       if (text) {
         setLink(text.trim());
         const parsed = await api.parseLinkPreview(text.trim());
@@ -179,7 +392,7 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
         setError(null);
       }
     } catch {
-      // Clipboard access blocked
+      // Fallback
     }
   };
 
@@ -215,12 +428,7 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
         throw new Error('Connection URL could not be generated. Check required fields (Protocol, Server, Port, ID).');
       }
 
-      if (editItem) {
-        await api.updateConnection(editItem.id, finalLabel, finalLink);
-      } else {
-        await api.addConnection(finalLabel, finalLink);
-      }
-
+      await api.updateConnection(editItem.id, finalLabel, finalLink);
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -232,7 +440,8 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
 
   const secVal = (params.Security || params.TLS || 'none').toLowerCase();
   const netVal = (params.Network || params.Type || 'tcp').toLowerCase();
-  const protoVal = (params.Protocol || 'vless').toLowerCase();
+  let protoVal = (params.Protocol || 'vless').toLowerCase();
+  if (protoVal === 'ss') protoVal = 'shadowsocks';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150">
@@ -248,17 +457,15 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
             </div>
             <div className="min-w-0">
               <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2 truncate">
-                <span>{editItem ? 'Edit VPN Profile' : 'Add VPN Profile'}</span>
-                {editItem && (
-                  <span className="px-2 py-0.5 text-[10px] uppercase font-mono font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-full shrink-0">
-                    {protoVal}
-                  </span>
-                )}
+                <span>Edit Profile</span>
+                <span className="px-2 py-0.5 text-[10px] uppercase font-mono font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-full shrink-0">
+                  {protoVal}
+                </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5 truncate">
                 {activeTab === 'form'
                   ? 'Edit individual protocol parameters and connection settings'
-                  : 'Import, inspect, or paste raw connection link URL'}
+                  : 'Inspect or paste raw connection link URL'}
               </p>
             </div>
           </div>
@@ -343,10 +550,10 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                     value={protoVal}
                     onChange={e => updateParam('Protocol', e.target.value)}
                   >
-                    <option value="vless" className="bg-slate-900 text-slate-200 py-1">VLESS</option>
-                    <option value="vmess" className="bg-slate-900 text-slate-200 py-1">VMess</option>
-                    <option value="trojan" className="bg-slate-900 text-slate-200 py-1">Trojan</option>
-                    <option value="ss" className="bg-slate-900 text-slate-200 py-1">Shadowsocks (SS)</option>
+                    <option value="vless" className="bg-slate-900 text-slate-200 py-1">vless</option>
+                    <option value="vmess" className="bg-slate-900 text-slate-200 py-1">vmess</option>
+                    <option value="trojan" className="bg-slate-900 text-slate-200 py-1">trojan</option>
+                    <option value="shadowsocks" className="bg-slate-900 text-slate-200 py-1">shadowsocks</option>
                   </StyledSelect>
 
                   <div>
@@ -388,7 +595,7 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                   <div className="sm:col-span-2">
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-[11px] font-medium text-slate-400">
-                        {protoVal === 'trojan' || protoVal === 'ss'
+                        {protoVal === 'trojan' || protoVal === 'shadowsocks'
                           ? 'Password / Secret Key'
                           : 'UUID / User ID'}
                       </label>
@@ -420,18 +627,15 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                     <option value="reality" className="bg-slate-900 text-slate-200 py-1">REALITY</option>
                   </StyledSelect>
 
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                      Flow
-                    </label>
-                    <input
-                      type="text"
-                      value={params.Flow || ''}
-                      onChange={e => updateParam('Flow', e.target.value)}
-                      placeholder="e.g. xtls-rprx-vision"
-                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
-                    />
-                  </div>
+                  <StyledSelect
+                    label="Flow"
+                    value={params.Flow || ''}
+                    onChange={e => updateParam('Flow', e.target.value)}
+                  >
+                    <option value="" className="bg-slate-900 text-slate-200 py-1">none</option>
+                    <option value="xtls-rprx-vision" className="bg-slate-900 text-slate-200 py-1">xtls-rprx-vision</option>
+                    <option value="xtls-rprx-vision-udp443" className="bg-slate-900 text-slate-200 py-1">xtls-rprx-vision-udp443</option>
+                  </StyledSelect>
 
                   {protoVal === 'vmess' && (
                     <div>
@@ -448,7 +652,7 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                     </div>
                   )}
 
-                  {(protoVal === 'ss' || protoVal === 'vless' || protoVal === 'vmess') && (
+                  {(protoVal === 'shadowsocks' || protoVal === 'vless' || protoVal === 'vmess') && (
                     <div>
                       <label className="block text-[11px] font-medium text-slate-400 mb-1">
                         Encryption / Cipher
@@ -457,7 +661,7 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                         type="text"
                         value={params.Encryption || ''}
                         onChange={e => updateParam('Encryption', e.target.value)}
-                        placeholder={protoVal === 'ss' ? 'aes-256-gcm' : 'none'}
+                        placeholder={protoVal === 'shadowsocks' ? 'aes-256-gcm' : 'none'}
                         className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
                       />
                     </div>
@@ -465,7 +669,7 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                 </div>
               </div>
 
-              {/* Section 3: REALITY Settings (Only when security is reality) */}
+              {/* Section 3: REALITY Settings */}
               {secVal === 'reality' && (
                 <div className="bg-gradient-to-br from-indigo-950/30 to-purple-950/30 rounded-xl p-4 border border-indigo-500/30 flex flex-col gap-3.5 animate-in fade-in">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-indigo-300">
@@ -554,16 +758,38 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                     </StyledSelect>
 
                     <div className="sm:col-span-3">
-                      <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                        ALPN
-                      </label>
-                      <input
-                        type="text"
-                        value={params.ALPN || ''}
-                        onChange={e => updateParam('ALPN', e.target.value)}
-                        placeholder="e.g. h2,http/1.1"
-                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
-                      />
+                      <StyledSelect
+                        label="ALPN"
+                        value={
+                          ['', 'h2,http/1.1', 'h2', 'http/1.1'].includes(params.ALPN || '')
+                            ? (params.ALPN || '')
+                            : 'custom'
+                        }
+                        onChange={e => {
+                          if (e.target.value === 'custom') {
+                            if (['', 'h2,http/1.1', 'h2', 'http/1.1'].includes(params.ALPN || '')) {
+                              updateParam('ALPN', 'h3');
+                            }
+                          } else {
+                            updateParam('ALPN', e.target.value);
+                          }
+                        }}
+                      >
+                        <option value="" className="bg-slate-900 text-slate-200 py-1">none / default</option>
+                        <option value="h2,http/1.1" className="bg-slate-900 text-slate-200 py-1">h2,http/1.1</option>
+                        <option value="h2" className="bg-slate-900 text-slate-200 py-1">h2</option>
+                        <option value="http/1.1" className="bg-slate-900 text-slate-200 py-1">http/1.1</option>
+                        <option value="custom" className="bg-slate-900 text-slate-200 py-1">custom...</option>
+                      </StyledSelect>
+                      {!['', 'h2,http/1.1', 'h2', 'http/1.1'].includes(params.ALPN || '') && (
+                        <input
+                          type="text"
+                          value={params.ALPN || ''}
+                          onChange={e => updateParam('ALPN', e.target.value)}
+                          placeholder="Custom ALPN e.g. h3"
+                          className="mt-1.5 w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -579,16 +805,14 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <StyledSelect
                     label="Transport / Network Type"
-                    value={netVal}
+                    value={netVal === 'websocket' ? 'ws' : netVal}
                     onChange={e => updateParams({ Network: e.target.value, Type: e.target.value })}
                   >
                     <option value="tcp" className="bg-slate-900 text-slate-200 py-1">TCP</option>
-                    <option value="ws" className="bg-slate-900 text-slate-200 py-1">WebSocket (ws)</option>
+                    <option value="ws" className="bg-slate-900 text-slate-200 py-1">WebSocket</option>
                     <option value="grpc" className="bg-slate-900 text-slate-200 py-1">gRPC</option>
-                    <option value="h2" className="bg-slate-900 text-slate-200 py-1">HTTP/2 (h2)</option>
                     <option value="httpupgrade" className="bg-slate-900 text-slate-200 py-1">HTTPUpgrade</option>
-                    <option value="splithttp" className="bg-slate-900 text-slate-200 py-1">SplitHTTP</option>
-                    <option value="xhttp" className="bg-slate-900 text-slate-200 py-1">XHTTP (xhttp)</option>
+                    <option value="xhttp" className="bg-slate-900 text-slate-200 py-1">XHTTP</option>
                   </StyledSelect>
 
                   <div>
@@ -632,16 +856,16 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
 
                   {(netVal === 'xhttp' || netVal === 'splithttp') && (
                     <div className="sm:col-span-2">
-                      <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                        XHTTP Mode
-                      </label>
-                      <input
-                        type="text"
-                        value={params.Mode || ''}
+                      <StyledSelect
+                        label="XHTTP Mode"
+                        value={params.Mode || 'auto'}
                         onChange={e => updateParam('Mode', e.target.value)}
-                        placeholder="e.g. auto, packet-up, stream-up"
-                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
-                      />
+                      >
+                        <option value="auto" className="bg-slate-900 text-slate-200 py-1">auto</option>
+                        <option value="packet-up" className="bg-slate-900 text-slate-200 py-1">packet-up</option>
+                        <option value="stream-up" className="bg-slate-900 text-slate-200 py-1">stream-up</option>
+                        <option value="stream-one" className="bg-slate-900 text-slate-200 py-1">stream-one</option>
+                      </StyledSelect>
                     </div>
                   )}
 
@@ -776,7 +1000,7 @@ export const AddEditModal: React.FC<AddEditModalProps> = ({
               className="flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-50 rounded-xl transition-all shadow-lg shadow-indigo-600/20 cursor-pointer"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              <span>{editItem ? 'Save Changes' : 'Add Profile'}</span>
+              <span>Save Changes</span>
             </button>
           </div>
         </form>

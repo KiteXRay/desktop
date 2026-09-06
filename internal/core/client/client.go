@@ -26,12 +26,19 @@ import (
 	"github.com/lilendian0x00/xray-knife/v3/pkg/xray"
 	xapplog "github.com/xtls/xray-core/app/log"
 	xcommlog "github.com/xtls/xray-core/common/log"
+	"github.com/xjasonlyu/tun2socks/v2/dialer"
+	tproxy "github.com/xjasonlyu/tun2socks/v2/proxy"
 	"golang.org/x/net/proxy"
 )
 
 type TunnelMode string
 
 const (
+	TunnelModeTunnel TunnelMode = "tunnel"
+	TunnelModeProxy  TunnelMode = "proxy"
+	TunnelModeBridge TunnelMode = "bridge"
+
+	// Backward compatibility
 	TunnelModeSystem TunnelMode = "system"
 	TunnelModePerApp TunnelMode = "per_app"
 
@@ -42,7 +49,7 @@ const (
 )
 
 var (
-	defaultTUNAddress = &net.IPNet{IP: net.IPv4(192, 18, 0, 1), Mask: net.IPv4Mask(255, 255, 255, 255)}
+	defaultTUNAddress = &net.IPNet{IP: net.IPv4(192, 18, 0, 1), Mask: net.IPv4Mask(255, 255, 255, 0)}
 
 	DefaultRoutesToTUN = []*route.Addr{
 		route.MustParseAddr("0.0.0.0/1"),
@@ -82,12 +89,17 @@ type Config struct {
 	Mode             TunnelMode
 	SocksPort        int
 	HTTPPort         int
+	TunnelDeviceIP      string
+	TunnelDNS           string
+	BridgeDialerFactory func(defaultSocksAddr string) tproxy.Dialer
 }
 
 type Client struct {
 	cfg Config
 
 	mode TunnelMode
+
+	bridgeDialerFactory func(defaultSocksAddr string) tproxy.Dialer
 
 	xInst  xrayproto.Instance
 	xCfg   *xrayproto.GeneralConfig
@@ -137,14 +149,16 @@ func NewClient() (*Client, error) {
 				IP:   net.IPv4(127, 0, 0, 1),
 				Port: internalPort,
 			},
-			TUNAddress:  defaultTUNAddress,
-			RoutesToTUN: DefaultRoutesToTUN,
-			Logger:      slog.New(slog.NewTextHandler(os.Stdout, nil)),
-			Mode:        TunnelModeSystem,
-			SocksPort:   DefaultSocksPort,
-			HTTPPort:    DefaultHTTPPort,
+			TUNAddress:     defaultTUNAddress,
+			RoutesToTUN:    DefaultRoutesToTUN,
+			Logger:         slog.New(slog.NewTextHandler(os.Stdout, nil)),
+			Mode:           TunnelModeTunnel,
+			SocksPort:      DefaultSocksPort,
+			HTTPPort:       DefaultHTTPPort,
+			TunnelDeviceIP: "192.18.0.1",
+			TunnelDNS:      "8.8.8.8",
 		},
-		mode:          TunnelModeSystem,
+		mode:          TunnelModeTunnel,
 		tunnelStopped: make(chan error, 1),
 		pipe:          p,
 		routes:        r,
@@ -166,6 +180,12 @@ func NewClientWithOpts(cfg Config) (*Client, error) {
 		c.cfg.Mode = cfg.Mode
 		c.mode = cfg.Mode
 	}
+	if cfg.TunnelDeviceIP != "" || cfg.TunnelDNS != "" {
+		c.SetTunnelSettings(cfg.TunnelDeviceIP, cfg.TunnelDNS)
+	}
+	if cfg.BridgeDialerFactory != nil {
+		c.bridgeDialerFactory = cfg.BridgeDialerFactory
+	}
 	return c, nil
 }
 
@@ -176,6 +196,25 @@ func (c *Client) Mode() TunnelMode {
 func (c *Client) SetMode(mode TunnelMode) {
 	c.mode = mode
 	c.cfg.Mode = mode
+}
+
+func (c *Client) SetBridgeDialerFactory(fn func(defaultSocksAddr string) tproxy.Dialer) {
+	c.bridgeDialerFactory = fn
+}
+
+func (c *Client) SetTunnelSettings(deviceIP, dns string) {
+	if deviceIP != "" {
+		c.cfg.TunnelDeviceIP = deviceIP
+		if parsed := net.ParseIP(deviceIP); parsed != nil {
+			c.cfg.TUNAddress = &net.IPNet{
+				IP:   parsed.To4(),
+				Mask: net.IPv4Mask(255, 255, 255, 0),
+			}
+		}
+	}
+	if dns != "" {
+		c.cfg.TunnelDNS = dns
+	}
 }
 
 func (c *Client) BytesRead() int {
@@ -221,17 +260,35 @@ func (c *Client) ConnectWithMode(link string, mode TunnelMode) error {
 	// Always start the public proxy listeners on 127.0.0.1:10808 and 10809
 	c.startProxyForwarders(ctx)
 
-	if mode == TunnelModeSystem {
+	switch mode {
+	case TunnelModeTunnel, TunnelModeSystem:
 		c.cfg.RoutesToTUN = DefaultRoutesToTUN
-	} else {
-		// In Per-App mode, route Telegram subnets through TUN automatically, leaving the rest of OS untouched
+		if err := c.setupSystemRouting(ctx); err != nil {
+			_ = c.Disconnect(context.Background())
+			return err
+		}
+	case TunnelModePerApp:
 		c.cfg.RoutesToTUN = TelegramRoutes
 		c.cfg.Logger.Info("Per-App Mode active: Routing Telegram subnets through TUN", "subnets", len(TelegramRoutes))
-	}
-
-	if err := c.setupSystemRouting(ctx); err != nil {
-		_ = c.Disconnect(context.Background())
-		return err
+		if err := c.setupSystemRouting(ctx); err != nil {
+			_ = c.Disconnect(context.Background())
+			return err
+		}
+	case TunnelModeProxy:
+		c.cfg.Logger.Info("Proxy Mode active: Listening on SOCKS5 10808 and HTTP 10809 (system proxy managed externally)")
+	case TunnelModeBridge:
+		c.cfg.RoutesToTUN = DefaultRoutesToTUN
+		c.cfg.Logger.Info("Bridge Mode active: Setting up TUN routing with per-process rules")
+		if err := c.setupSystemRouting(ctx); err != nil {
+			_ = c.Disconnect(context.Background())
+			return err
+		}
+	default:
+		c.cfg.RoutesToTUN = DefaultRoutesToTUN
+		if err := c.setupSystemRouting(ctx); err != nil {
+			_ = c.Disconnect(context.Background())
+			return err
+		}
 	}
 
 	return nil
@@ -261,14 +318,94 @@ func (c *Client) setupSystemRouting(ctx context.Context) error {
 	}
 
 	go func() {
-		errPipe := c.pipe.Copy(ctx, c.tunnel, c.cfg.InboundProxy.String())
+		var errPipe error
+		if c.cfg.Mode == TunnelModeBridge {
+			c.setupBridgeBypass()
+			if c.bridgeDialerFactory != nil {
+				d := c.bridgeDialerFactory(c.cfg.InboundProxy.String())
+				errPipe = c.pipe.CopyWithDialer(ctx, c.tunnel, d)
+			} else {
+				errPipe = c.pipe.Copy(ctx, c.tunnel, c.cfg.InboundProxy.String())
+			}
+			c.cleanupBridgeBypass()
+		} else {
+			errPipe = c.pipe.Copy(ctx, c.tunnel, c.cfg.InboundProxy.String())
+		}
 		select {
 		case c.tunnelStopped <- errPipe:
-			default:
+		default:
 		}
 	}()
 
 	return nil
+}
+
+func (c *Client) setupBridgeBypass() {
+	iface, err := getPhysicalInterface()
+	if err != nil {
+		c.cfg.Logger.Error("failed to find physical interface for bridge bypass", "err", err)
+		return
+	}
+	c.cfg.Logger.Info("Bridge mode binding direct traffic to physical interface", "name", iface.Name, "index", iface.Index)
+	dialer.DefaultDialer.InterfaceIndex.Store(int32(iface.Index))
+	dialer.DefaultDialer.InterfaceName.Store(iface.Name)
+}
+
+func (c *Client) cleanupBridgeBypass() {
+	dialer.DefaultDialer.InterfaceIndex.Store(0)
+	dialer.DefaultDialer.InterfaceName.Store("")
+}
+
+func getPhysicalInterface() (*net.Interface, error) {
+	ifIP, err := gateway.DiscoverInterface()
+	if err == nil && ifIP != nil && !ifIP.IsUnspecified() {
+		ifaces, _ := net.Interfaces()
+		for _, ifc := range ifaces {
+			addrs, _ := ifc.Addrs()
+			for _, addr := range addrs {
+				if ipNet, ok := addr.(*net.IPNet); ok {
+					if ipNet.IP.Equal(ifIP) {
+						return &ifc, nil
+					}
+				}
+			}
+		}
+	}
+
+	gwIP, err := gateway.DiscoverGateway()
+	if err == nil && gwIP != nil && !gwIP.IsUnspecified() {
+		ifaces, _ := net.Interfaces()
+		for _, ifc := range ifaces {
+			if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
+				continue
+			}
+			name := strings.ToLower(ifc.Name)
+			if strings.Contains(name, "tun") || strings.Contains(name, "tap") || strings.Contains(name, "wintun") || strings.Contains(name, "kite") {
+				continue
+			}
+			addrs, _ := ifc.Addrs()
+			for _, addr := range addrs {
+				if ipNet, ok := addr.(*net.IPNet); ok {
+					if ipNet.Contains(gwIP) {
+						return &ifc, nil
+					}
+				}
+			}
+		}
+	}
+
+	ifaces, _ := net.Interfaces()
+	for _, ifc := range ifaces {
+		if ifc.Flags&net.FlagUp != 0 && ifc.Flags&net.FlagBroadcast != 0 && ifc.Flags&net.FlagLoopback == 0 {
+			name := strings.ToLower(ifc.Name)
+			if strings.Contains(name, "tun") || strings.Contains(name, "tap") || strings.Contains(name, "wintun") || strings.Contains(name, "kite") {
+				continue
+			}
+			return &ifc, nil
+		}
+	}
+
+	return nil, errors.New("no physical network interface found")
 }
 
 func (c *Client) tunIfName() string {
@@ -282,6 +419,8 @@ func (c *Client) tunIfName() string {
 }
 
 func (c *Client) Disconnect(ctx context.Context) error {
+	c.cleanupBridgeBypass()
+
 	if c.stopTunnel != nil {
 		c.stopTunnel()
 		c.stopTunnel = nil
@@ -392,8 +531,19 @@ func (c *Client) setupTunnel() (*tun.Interface, error) {
 	}
 	c.ifName = ifc.Name()
 
-	if err = ifc.Up(c.cfg.TUNAddress, c.cfg.TUNAddress.IP); err != nil {
+	tunAddr := c.cfg.TUNAddress
+	if tunAddr == nil {
+		tunAddr = defaultTUNAddress
+	}
+
+	if err = ifc.Up(tunAddr, tunAddr.IP); err != nil {
 		return nil, fmt.Errorf("setup interface: %w", err)
+	}
+
+	if c.cfg.TunnelDNS != "" {
+		if err := ifc.SetDNS(c.cfg.TunnelDNS); err != nil {
+			c.cfg.Logger.Warn("failed to set TUN DNS", "dns", c.cfg.TunnelDNS, "err", err)
+		}
 	}
 
 	if err = c.routes.Add(route.Opts{IfName: ifc.Name(), Routes: c.cfg.RoutesToTUN}); err != nil {

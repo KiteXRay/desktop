@@ -1,5 +1,6 @@
 export interface ConnectionDTO {
   id: string;
+  subscriptionId?: string;
   label: string;
   link: string;
   active: boolean;
@@ -51,7 +52,35 @@ export interface ConnectionStatusEvent {
   message?: string;
 }
 
-export type TunnelMode = 'system' | 'per_app';
+export type TunnelMode = 'tunnel' | 'proxy' | 'bridge' | 'system' | 'per_app';
+
+export interface Subscription {
+  id: string;
+  subId?: string;
+  url: string;
+  label: string;
+  count: number;
+  lastUpdated: number;
+  userInfo?: string;
+}
+
+export interface BridgeRule {
+  id: string;
+  pattern: string;
+  proxyTarget: string;
+  proxyType: 'socks5' | 'http';
+  enabled: boolean;
+  description?: string;
+}
+
+export interface AddResultDTO {
+  type: 'subscription' | 'connection';
+  id?: string;
+  label?: string;
+  count?: number;
+  lastUpdated?: number;
+  connection?: ConnectionDTO;
+}
 
 export interface ProxyEndpointsDTO {
   socks5Host: string;

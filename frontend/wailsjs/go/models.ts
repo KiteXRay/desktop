@@ -21,6 +21,33 @@ export namespace appscan {
 
 }
 
+export namespace bridge {
+	
+	export class BridgeRule {
+	    id: string;
+	    pattern: string;
+	    proxyTarget: string;
+	    proxyType: string;
+	    enabled: boolean;
+	    description?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BridgeRule(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.pattern = source["pattern"];
+	        this.proxyTarget = source["proxyTarget"];
+	        this.proxyType = source["proxyType"];
+	        this.enabled = source["enabled"];
+	        this.description = source["description"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
 	export class AppInfoDTO {
@@ -47,6 +74,7 @@ export namespace main {
 	}
 	export class ConnectionDTO {
 	    id: string;
+	    subscriptionId?: string;
 	    label: string;
 	    link: string;
 	    active: boolean;
@@ -69,6 +97,7 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.subscriptionId = source["subscriptionId"];
 	        this.label = source["label"];
 	        this.link = source["link"];
 	        this.active = source["active"];
@@ -153,6 +182,35 @@ export namespace main {
 	        this.downloadSpeed = source["downloadSpeed"];
 	        this.readHistory = source["readHistory"];
 	        this.writeHistory = source["writeHistory"];
+	    }
+	}
+
+}
+
+export namespace subscription {
+	
+	export class Subscription {
+	    id: string;
+	    subId: string;
+	    url: string;
+	    label: string;
+	    count: number;
+	    lastUpdated: number;
+	    userInfo?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Subscription(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.subId = source["subId"];
+	        this.url = source["url"];
+	        this.label = source["label"];
+	        this.count = source["count"];
+	        this.lastUpdated = source["lastUpdated"];
+	        this.userInfo = source["userInfo"];
 	    }
 	}
 

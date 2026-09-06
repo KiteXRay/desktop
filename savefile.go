@@ -2,12 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
+	"github.com/KiteXRay/desktop/internal/bridge"
 	"github.com/KiteXRay/desktop/internal/connlist"
+	"github.com/KiteXRay/desktop/internal/subscription"
 )
 
 const (
@@ -16,31 +20,41 @@ const (
 )
 
 type SavedState struct {
-	ID           string `json:"id,omitempty"`
-	Link         string `json:"link"`
-	Label        string `json:"label"`
-	TotalRead    int64  `json:"totalRead,omitempty"`
-	TotalWritten int64  `json:"totalWritten,omitempty"`
+	ID             string `json:"id,omitempty"`
+	SubscriptionID string `json:"subscriptionId,omitempty"`
+	Link           string `json:"link"`
+	Label          string `json:"label"`
+	TotalRead      int64  `json:"totalRead,omitempty"`
+	TotalWritten   int64  `json:"totalWritten,omitempty"`
 }
 
 type AppConfigFile struct {
-	TunnelMode  string       `json:"tunnelMode"`
-	Connections []SavedState `json:"connections"`
+	TunnelMode     string                      `json:"tunnelMode"`
+	TunnelDeviceIP string                      `json:"tunnelDeviceIp,omitempty"`
+	TunnelDNS      string                      `json:"tunnelDns,omitempty"`
+	Subscriptions  []subscription.Subscription `json:"subscriptions,omitempty"`
+	BridgeRules    []bridge.BridgeRule         `json:"bridgeRules,omitempty"`
+	Connections    []SavedState                `json:"connections"`
 }
 
 type SaveFile struct {
-	filePath   string
-	tunnelMode string
-	mu         sync.Mutex
+	filePath       string
+	tunnelMode     string
+	tunnelDeviceIP string
+	tunnelDNS      string
+	subscriptions  []subscription.Subscription
+	bridgeRules    []bridge.BridgeRule
+	mu             sync.Mutex
 }
 
 func serialize(item *connlist.Item) SavedState {
 	return SavedState{
-		ID:           item.ID(),
-		Link:         item.Link(),
-		Label:        item.Label(),
-		TotalRead:    item.BytesRead(),
-		TotalWritten: item.BytesWritten(),
+		ID:             item.ID(),
+		SubscriptionID: item.SubscriptionID(),
+		Link:           item.Link(),
+		Label:          item.Label(),
+		TotalRead:      item.BytesRead(),
+		TotalWritten:   item.BytesWritten(),
 	}
 }
 
@@ -55,31 +69,97 @@ func NewSaveFile() *SaveFile {
 	_ = os.MkdirAll(appConfigDir, 0755)
 
 	return &SaveFile{
-		filePath:   filepath.Join(appConfigDir, configFileName),
-		tunnelMode: "system",
+		filePath:       filepath.Join(appConfigDir, configFileName),
+		tunnelMode:     "tunnel",
+		tunnelDeviceIP: "192.18.0.1",
+		tunnelDNS:      "8.8.8.8",
+		subscriptions:  make([]subscription.Subscription, 0),
+		bridgeRules:    make([]bridge.BridgeRule, 0),
 	}
 }
 
 func (s *SaveFile) GetTunnelMode() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.tunnelMode == "" {
-		return "system"
+	switch s.tunnelMode {
+	case "proxy":
+		return "proxy"
+	case "bridge", "per_app":
+		return "bridge"
+	default:
+		return "tunnel"
 	}
-	return s.tunnelMode
 }
 
 func (s *SaveFile) SetTunnelMode(mode string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if mode == "per_app" {
-		s.tunnelMode = "per_app"
-	} else {
-		s.tunnelMode = "system"
+	switch mode {
+	case "proxy":
+		s.tunnelMode = "proxy"
+	case "bridge", "per_app":
+		s.tunnelMode = "bridge"
+	default:
+		s.tunnelMode = "tunnel"
 	}
 }
 
-// Update saves list and current tunnel mode atomically into JSON file.
+func (s *SaveFile) GetTunnelSettings() (string, string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	devIP := s.tunnelDeviceIP
+	if devIP == "" {
+		devIP = "192.18.0.1"
+	}
+	dns := s.tunnelDNS
+	if dns == "" {
+		dns = "8.8.8.8"
+	}
+	return devIP, dns
+}
+
+func (s *SaveFile) SetTunnelSettings(deviceIP, dns string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if deviceIP != "" {
+		s.tunnelDeviceIP = deviceIP
+	}
+	if dns != "" {
+		s.tunnelDNS = dns
+	}
+}
+
+func (s *SaveFile) GetSubscriptions() []subscription.Subscription {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res := make([]subscription.Subscription, len(s.subscriptions))
+	copy(res, s.subscriptions)
+	return res
+}
+
+func (s *SaveFile) SetSubscriptions(subs []subscription.Subscription) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.subscriptions = make([]subscription.Subscription, len(subs))
+	copy(s.subscriptions, subs)
+}
+
+func (s *SaveFile) GetBridgeRules() []bridge.BridgeRule {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res := make([]bridge.BridgeRule, len(s.bridgeRules))
+	copy(res, s.bridgeRules)
+	return res
+}
+
+func (s *SaveFile) SetBridgeRules(rules []bridge.BridgeRule) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.bridgeRules = make([]bridge.BridgeRule, len(rules))
+	copy(s.bridgeRules, rules)
+}
+
+// Update saves list, tunnel mode, settings, subscriptions, and bridge rules atomically into JSON file.
 func (s *SaveFile) Update(list *connlist.Collection) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -95,12 +175,24 @@ func (s *SaveFile) Update(list *connlist.Collection) {
 
 	tMode := s.tunnelMode
 	if tMode == "" {
-		tMode = "system"
+		tMode = "tunnel"
+	}
+	devIP := s.tunnelDeviceIP
+	if devIP == "" {
+		devIP = "192.18.0.1"
+	}
+	dns := s.tunnelDNS
+	if dns == "" {
+		dns = "8.8.8.8"
 	}
 
 	cfg := AppConfigFile{
-		TunnelMode:  tMode,
-		Connections: toSave,
+		TunnelMode:     tMode,
+		TunnelDeviceIP: devIP,
+		TunnelDNS:      dns,
+		Subscriptions:  s.subscriptions,
+		BridgeRules:    s.bridgeRules,
+		Connections:    toSave,
 	}
 
 	b, err := json.MarshalIndent(cfg, "", "  ")
@@ -161,10 +253,31 @@ func (s *SaveFile) Load(list *connlist.Collection) {
 		if appCfg.TunnelMode != "" {
 			s.tunnelMode = appCfg.TunnelMode
 		}
+		if appCfg.TunnelDeviceIP != "" {
+			s.tunnelDeviceIP = appCfg.TunnelDeviceIP
+		}
+		if appCfg.TunnelDNS != "" {
+			s.tunnelDNS = appCfg.TunnelDNS
+		}
+		if len(appCfg.Subscriptions) > 0 {
+			for i := range appCfg.Subscriptions {
+				sub := &appCfg.Subscriptions[i]
+				if sub.SubID == "" {
+					sub.SubID = subscription.ExtractSubIDFromURL(sub.URL)
+				}
+				if sub.SubID != "" && (sub.Label == "" || !strings.HasPrefix(sub.Label, "Subscription-")) {
+					sub.Label = fmt.Sprintf("Subscription-%s", sub.SubID)
+				}
+			}
+			s.subscriptions = appCfg.Subscriptions
+		}
+		if len(appCfg.BridgeRules) > 0 {
+			s.bridgeRules = appCfg.BridgeRules
+		}
 		s.mu.Unlock()
 
 		for _, item := range appCfg.Connections {
-			if err := list.AddItemWithID(item.ID, item.Label, item.Link, item.TotalRead, item.TotalWritten); err != nil {
+			if err := list.AddItemWithSubscription(item.ID, item.Label, item.Link, item.SubscriptionID, item.TotalRead, item.TotalWritten); err != nil {
 				slog.Error("failed to load item", "error", err, "label", item.Label)
 			}
 		}
@@ -179,7 +292,7 @@ func (s *SaveFile) Load(list *connlist.Collection) {
 	}
 
 	for _, item := range loadedItems {
-		if err := list.AddItemWithID(item.ID, item.Label, item.Link, item.TotalRead, item.TotalWritten); err != nil {
+		if err := list.AddItemWithSubscription(item.ID, item.Label, item.Link, item.SubscriptionID, item.TotalRead, item.TotalWritten); err != nil {
 			slog.Error("failed to load item", "error", err, "label", item.Label)
 		}
 	}

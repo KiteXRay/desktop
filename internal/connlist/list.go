@@ -4,6 +4,8 @@ import (
 	"errors"
 	"slices"
 	"sync"
+
+	tproxy "github.com/xjasonlyu/tun2socks/v2/proxy"
 )
 
 // Collection represents a collection of items.
@@ -11,6 +13,8 @@ import (
 type Collection struct {
 	items []*Item
 	mu    sync.RWMutex
+
+	bridgeDialerFactory func(defaultSocksAddr string) tproxy.Dialer
 
 	onAdd    func(*Item)
 	onDelete func(*Item)
@@ -97,11 +101,19 @@ func (l *Collection) AddItemWithTraffic(label, link string, read, written int64)
 }
 
 func (l *Collection) AddItemWithID(id, label, link string, read, written int64) error {
+	return l.AddItemWithSubscription(id, label, link, "", read, written)
+}
+
+func (l *Collection) AddItemWithSubscription(id, label, link, subscriptionID string, read, written int64) error {
 	item, err := newItemWithID(id, label, link, l)
 	if err != nil {
 		return err
 	}
+	item.subscriptionID = subscriptionID
 	item.SetPersistedTraffic(read, written)
+	if l.bridgeDialerFactory != nil {
+		item.SetBridgeDialerFactory(l.bridgeDialerFactory)
+	}
 
 	l.mu.Lock()
 	l.items = append(l.items, item)
@@ -202,4 +214,28 @@ func (l *Collection) MoveItem(from, to int) error {
 	}
 
 	return nil
+}
+
+func (l *Collection) SetTunnelSettings(deviceIP, dns string) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	for _, item := range l.items {
+		if item != nil {
+			item.SetTunnelSettings(deviceIP, dns)
+		}
+	}
+}
+
+func (l *Collection) SetBridgeDialerFactory(fn func(defaultSocksAddr string) tproxy.Dialer) {
+	l.mu.Lock()
+	l.bridgeDialerFactory = fn
+	items := make([]*Item, len(l.items))
+	copy(items, l.items)
+	l.mu.Unlock()
+
+	for _, item := range items {
+		if item != nil {
+			item.SetBridgeDialerFactory(fn)
+		}
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,16 +21,19 @@ import (
 	"github.com/energye/systray"
 	"github.com/jackpal/gateway"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	tproxy "github.com/xjasonlyu/tun2socks/v2/proxy"
 	socks5proxy "golang.org/x/net/proxy"
 
 	"github.com/goxray/core/client"
 	"github.com/KiteXRay/desktop/internal/appscan"
+	"github.com/KiteXRay/desktop/internal/bridge"
 	"github.com/KiteXRay/desktop/internal/connlist"
 	"github.com/KiteXRay/desktop/internal/osspecific/clean"
 	"github.com/KiteXRay/desktop/internal/osspecific/networkready"
 	"github.com/KiteXRay/desktop/internal/osspecific/proxy"
 	"github.com/KiteXRay/desktop/internal/osspecific/root"
 	"github.com/KiteXRay/desktop/internal/sleepwatch"
+	"github.com/KiteXRay/desktop/internal/subscription"
 	"github.com/KiteXRay/desktop/internal/updater"
 	xray3 "github.com/lilendian0x00/xray-knife/v3/pkg/xray"
 )
@@ -44,9 +48,10 @@ type ProxyEndpointsDTO struct {
 }
 
 type ConnectionDTO struct {
-	ID           string            `json:"id"`
-	Label        string            `json:"label"`
-	Link         string            `json:"link"`
+	ID             string            `json:"id"`
+	SubscriptionID string            `json:"subscriptionId,omitempty"`
+	Label          string            `json:"label"`
+	Link           string            `json:"link"`
 	Active       bool              `json:"active"`
 	Address      string            `json:"address"`
 	Port         string            `json:"port"`
@@ -125,6 +130,11 @@ func NewApp() *App {
 	}
 
 	saveFile.Load(items)
+	devIP, dns := saveFile.GetTunnelSettings()
+	items.SetTunnelSettings(devIP, dns)
+	items.SetBridgeDialerFactory(func(defaultSocksAddr string) tproxy.Dialer {
+		return bridge.NewBridgeDialer(defaultSocksAddr, saveFile.GetBridgeRules, slog.Default())
+	})
 
 	items.OnChange(func() {
 		saveFile.Update(items)
@@ -157,6 +167,12 @@ func (a *App) startup(ctx context.Context) {
 	go a.startStatsTicker()
 	a.startSleepWatcher()
 	go a.startHealthWatchdog()
+
+	// Automatically update all subscriptions in the background on startup
+	go func() {
+		time.Sleep(2 * time.Second)
+		a.UpdateAllSubscriptions()
+	}()
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -203,9 +219,10 @@ func (a *App) GetConnections() []ConnectionDTO {
 		bytesRead := item.BytesRead()
 		bytesWritten := item.BytesWritten()
 		dtos[i] = ConnectionDTO{
-			ID:           item.ID(),
-			Label:        item.Label(),
-			Link:         item.Link(),
+			ID:             item.ID(),
+			SubscriptionID: item.SubscriptionID(),
+			Label:          item.Label(),
+			Link:           item.Link(),
 			Active:       item.Active() || (activeID != "" && activeID == item.ID()),
 			Address:      cfg["Address"],
 			Port:         cfg["Port"],
@@ -225,8 +242,23 @@ func (a *App) GetConnections() []ConnectionDTO {
 }
 
 func (a *App) AddConnection(label, link string) (*ConnectionDTO, error) {
-	if label == "" || link == "" {
-		return nil, errors.New("label and link cannot be empty")
+	link = strings.TrimSpace(link)
+	if link == "" {
+		return nil, errors.New("link cannot be empty")
+	}
+
+	label = strings.TrimSpace(label)
+	if label == "" {
+		if idx := strings.Index(link, "#"); idx != -1 && idx+1 < len(link) {
+			if unescaped, err := url.QueryUnescape(link[idx+1:]); err == nil && unescaped != "" {
+				label = unescaped
+			} else {
+				label = link[idx+1:]
+			}
+		}
+		if label == "" {
+			label = "Server"
+		}
 	}
 
 	proto, err := (&xray3.Core{}).CreateProtocol(link)
@@ -347,9 +379,22 @@ func (a *App) connectInternal(id string) error {
 		}
 	}
 
-	tMode := client.TunnelModeSystem
-	if a.GetTunnelMode() == "per_app" {
+	currentMode := a.GetTunnelMode()
+	var tMode client.TunnelMode
+	switch currentMode {
+	case "proxy":
+		tMode = client.TunnelModeProxy
+	case "bridge":
+		tMode = client.TunnelModeBridge
+	case "per_app":
 		tMode = client.TunnelModePerApp
+	default:
+		tMode = client.TunnelModeTunnel
+	}
+	if tMode == client.TunnelModeBridge {
+		target.SetBridgeDialerFactory(func(defaultSocksAddr string) tproxy.Dialer {
+			return bridge.NewBridgeDialer(defaultSocksAddr, a.saveFile.GetBridgeRules, slog.Default())
+		})
 	}
 	if err := target.ConnectWithMode(tMode); err != nil {
 		slog.Error("failed to connect", "error", err)
@@ -370,15 +415,20 @@ func (a *App) connectInternal(id string) error {
 	a.SetActiveID(id)
 	target.SetActive(true)
 
-	// Ensure system proxy remains OFF unless explicitly toggled by user
-	_ = proxy.SetSystemProxy(false, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
-	a.systemProxyOn = false
+	if currentMode == "proxy" {
+		_ = proxy.SetSystemProxy(true, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
+		a.systemProxyOn = true
+	} else {
+		_ = proxy.SetSystemProxy(false, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
+		a.systemProxyOn = false
+	}
 
 	if a.onTrayUpdate != nil {
 		a.onTrayUpdate()
 	}
 	if a.ctx != nil {
 		wruntime.EventsEmit(a.ctx, "connections:changed", a.GetConnections())
+		wruntime.EventsEmit(a.ctx, "proxy:status", a.systemProxyOn)
 		wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
 			"status": "connected",
 			"id":     id,
@@ -393,10 +443,8 @@ func (a *App) Disconnect() error {
 	a.connectMu.Lock()
 	defer a.connectMu.Unlock()
 
-	if a.systemProxyOn {
-		_ = proxy.SetSystemProxy(false, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
-		a.systemProxyOn = false
-	}
+	_ = proxy.SetSystemProxy(false, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
+	a.systemProxyOn = false
 
 	currentActive := a.ActiveID()
 	if currentActive == "" {
@@ -528,7 +576,7 @@ func (a *App) ResetTraffic(id string) error {
 func (a *App) GetAppInfo() AppInfoDTO {
 	return AppInfoDTO{
 		Name:        "Kite",
-		Version:     "1.0.2",
+		Version:     "1.1.0",
 		RepoURL:     "https://github.com/KiteXRay/desktop",
 		OS:          runtime.GOOS,
 		Arch:        runtime.GOARCH,
@@ -566,6 +614,13 @@ func (a *App) OpenURL(targetURL string) {
 	if a.ctx != nil {
 		wruntime.BrowserOpenURL(a.ctx, targetURL)
 	}
+}
+
+func (a *App) GetClipboardText() (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("app context not ready")
+	}
+	return wruntime.ClipboardGetText(a.ctx)
 }
 
 func pingRoutedConnection(link string, timeout time.Duration) (latency int64) {
@@ -881,18 +936,27 @@ func (a *App) BuildLinkFromConfig(cfg map[string]string) (string, error) {
 func (a *App) GetTunnelMode() string {
 	a.tunnelModeMu.RLock()
 	defer a.tunnelModeMu.RUnlock()
-	if a.tunnelMode == "" {
-		return "system"
+	switch a.tunnelMode {
+	case "proxy":
+		return "proxy"
+	case "bridge", "per_app":
+		return "bridge"
+	default:
+		return "tunnel"
 	}
-	return a.tunnelMode
 }
 
 func (a *App) SetTunnelMode(mode string) error {
 	a.connectMu.Lock()
 	defer a.connectMu.Unlock()
 
-	if mode != "per_app" {
-		mode = "system"
+	switch mode {
+	case "proxy":
+		mode = "proxy"
+	case "bridge", "per_app":
+		mode = "bridge"
+	default:
+		mode = "tunnel"
 	}
 
 	a.tunnelModeMu.Lock()
@@ -913,9 +977,19 @@ func (a *App) SetTunnelMode(mode string) error {
 		if item != nil {
 			_ = item.Disconnect()
 
-			tMode := client.TunnelModeSystem
-			if mode == "per_app" {
-				tMode = client.TunnelModePerApp
+			var tMode client.TunnelMode
+			switch mode {
+			case "proxy":
+				tMode = client.TunnelModeProxy
+			case "bridge":
+				tMode = client.TunnelModeBridge
+			default:
+				tMode = client.TunnelModeTunnel
+			}
+			if tMode == client.TunnelModeBridge {
+				item.SetBridgeDialerFactory(func(defaultSocksAddr string) tproxy.Dialer {
+					return bridge.NewBridgeDialer(defaultSocksAddr, a.saveFile.GetBridgeRules, slog.Default())
+				})
 			}
 			if err := item.ConnectWithMode(tMode); err != nil {
 				slog.Error("failed to reconnect with new mode", "error", err)
@@ -932,15 +1006,20 @@ func (a *App) SetTunnelMode(mode string) error {
 			}
 			item.SetActive(true)
 
-			// In both modes, system proxy remains OFF unless explicitly enabled by user
-			_ = proxy.SetSystemProxy(false, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
-			a.systemProxyOn = false
+			if mode == "proxy" {
+				_ = proxy.SetSystemProxy(true, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
+				a.systemProxyOn = true
+			} else {
+				_ = proxy.SetSystemProxy(false, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
+				a.systemProxyOn = false
+			}
 
 			if a.onTrayUpdate != nil {
 				a.onTrayUpdate()
 			}
 			if a.ctx != nil {
 				wruntime.EventsEmit(a.ctx, "connections:changed", a.GetConnections())
+				wruntime.EventsEmit(a.ctx, "proxy:status", a.systemProxyOn)
 				wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
 					"status": "connected",
 					"id":     activeID,
@@ -1224,5 +1303,260 @@ func (a *App) verifyTunnelConnectivity(timeout time.Duration) bool {
 		}
 	}
 	return false
+}
+
+func (a *App) GetTunnelSettings() (string, string) {
+	return a.saveFile.GetTunnelSettings()
+}
+
+func (a *App) SetTunnelSettings(deviceIP, dns string) error {
+	a.saveFile.SetTunnelSettings(deviceIP, dns)
+	a.items.SetTunnelSettings(deviceIP, dns)
+	a.saveFile.Update(a.items)
+	return nil
+}
+
+func (a *App) GetSubscriptions() []subscription.Subscription {
+	subs := a.saveFile.GetSubscriptions()
+	changed := false
+	for i := range subs {
+		if subs[i].SubID == "" {
+			subs[i].SubID = subscription.ExtractSubIDFromURL(subs[i].URL)
+			if subs[i].SubID != "" {
+				changed = true
+			}
+		}
+		if subs[i].SubID != "" && (subs[i].Label == "" || !strings.HasPrefix(subs[i].Label, "Subscription-")) {
+			subs[i].Label = fmt.Sprintf("Subscription-%s", subs[i].SubID)
+			changed = true
+		}
+	}
+	if changed {
+		a.saveFile.SetSubscriptions(subs)
+	}
+	return subs
+}
+
+func (a *App) AddConnectionOrSubscription(input, label string) (map[string]any, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil, errors.New("input cannot be empty")
+	}
+
+	// 1. Check if input is a subscription URL
+	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
+		links, sub, err := subscription.FetchSubscription(input, label)
+		if err != nil {
+			return nil, fmt.Errorf("fetch subscription failed: %w", err)
+		}
+
+		subs := a.saveFile.GetSubscriptions()
+		subs = append(subs, *sub)
+		a.saveFile.SetSubscriptions(subs)
+
+		addedCount := 0
+		for _, link := range links {
+			if _, err := (&xray3.Core{}).CreateProtocol(link); err != nil {
+				continue
+			}
+			itmLabel := subscription.ExtractLabelFromLink(link)
+			if itmLabel == "" {
+				itmLabel = sub.Label
+			}
+			if err := a.items.AddItemWithSubscription("", itmLabel, link, sub.ID, 0, 0); err == nil {
+				addedCount++
+			}
+		}
+
+		a.saveFile.Update(a.items)
+		if a.ctx != nil {
+			wruntime.EventsEmit(a.ctx, "connections:changed", a.GetConnections())
+		}
+
+		return map[string]any{
+			"type":        "subscription",
+			"id":          sub.ID,
+			"subId":       sub.SubID,
+			"label":       sub.Label,
+			"count":       addedCount,
+			"lastUpdated": sub.LastUpdated,
+		}, nil
+	}
+
+	// 2. Single connection link
+	dto, err := a.AddConnection(label, input)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"type":       "connection",
+		"connection": dto,
+	}, nil
+}
+
+func (a *App) UpdateSubscription(id string) error {
+	subs := a.saveFile.GetSubscriptions()
+	var targetSub *subscription.Subscription
+	targetIdx := -1
+	for i, s := range subs {
+		if s.ID == id {
+			targetSub = &subs[i]
+			targetIdx = i
+			break
+		}
+	}
+	if targetSub == nil {
+		return fmt.Errorf("subscription %s not found", id)
+	}
+
+	links, fetched, err := subscription.FetchSubscription(targetSub.URL, targetSub.Label)
+	if err != nil {
+		return fmt.Errorf("fetch subscription failed: %w", err)
+	}
+
+	fetched.ID = targetSub.ID
+	subs[targetIdx] = *fetched
+	a.saveFile.SetSubscriptions(subs)
+
+	// Collect existing items belonging to this subscription
+	allItems := a.items.All()
+	var existing []*connlist.Item
+	for _, item := range allItems {
+		if item.SubscriptionID() == id {
+			existing = append(existing, item)
+		}
+	}
+
+	activeID := a.ActiveID()
+	wasActive := false
+	var activeItem *connlist.Item
+
+	// Update existing items in-place to preserve IDs, traffic stats, and order
+	for i := 0; i < len(links); i++ {
+		link := links[i]
+		if _, err := (&xray3.Core{}).CreateProtocol(link); err != nil {
+			continue
+		}
+		lbl := subscription.ExtractLabelFromLink(link)
+		if lbl == "" {
+			lbl = fetched.Label
+		}
+		if i < len(existing) {
+			item := existing[i]
+			if item.ID() == activeID {
+				wasActive = true
+				activeItem = item
+				_ = a.Disconnect()
+			}
+			_ = item.Update(link, lbl)
+		} else {
+			_ = a.items.AddItemWithSubscription("", lbl, link, id, 0, 0)
+		}
+	}
+
+	// Remove excess existing items if fewer links returned
+	if len(existing) > len(links) {
+		for i := len(links); i < len(existing); i++ {
+			item := existing[i]
+			if item.ID() == activeID {
+				_ = a.Disconnect()
+			}
+			a.items.RemoveItem(item)
+		}
+	}
+
+	// Reconnect if it was active
+	if wasActive && activeItem != nil {
+		_ = a.Connect(activeItem.ID())
+	}
+
+	a.saveFile.Update(a.items)
+	if a.ctx != nil {
+		wruntime.EventsEmit(a.ctx, "connections:changed", a.GetConnections())
+	}
+	return nil
+}
+
+func (a *App) DeleteSubscription(id string) error {
+	subs := a.saveFile.GetSubscriptions()
+	newSubs := make([]subscription.Subscription, 0, len(subs))
+	found := false
+	for _, s := range subs {
+		if s.ID == id {
+			found = true
+			continue
+		}
+		newSubs = append(newSubs, s)
+	}
+	if !found {
+		return fmt.Errorf("subscription %s not found", id)
+	}
+	a.saveFile.SetSubscriptions(newSubs)
+
+	// Remove all items belonging to this subscription
+	allItems := a.items.All()
+	activeID := a.ActiveID()
+	for _, item := range allItems {
+		if item.SubscriptionID() == id {
+			if item.ID() == activeID {
+				_ = a.Disconnect()
+			}
+			a.items.RemoveItem(item)
+		}
+	}
+
+	a.saveFile.Update(a.items)
+	if a.ctx != nil {
+		wruntime.EventsEmit(a.ctx, "connections:changed", a.GetConnections())
+	}
+	return nil
+}
+
+func (a *App) UpdateAllSubscriptions() {
+	subs := a.saveFile.GetSubscriptions()
+	for _, s := range subs {
+		if err := a.UpdateSubscription(s.ID); err != nil {
+			slog.Warn("failed to auto-update subscription", "id", s.ID, "url", s.URL, "error", err)
+		}
+	}
+}
+
+func (a *App) GetBridgeRules() []bridge.BridgeRule {
+	return a.saveFile.GetBridgeRules()
+}
+
+func (a *App) SaveBridgeRules(rules []bridge.BridgeRule) error {
+	a.saveFile.SetBridgeRules(rules)
+	a.saveFile.Update(a.items)
+	if a.ctx != nil {
+		wruntime.EventsEmit(a.ctx, "bridge:rules_changed", rules)
+	}
+	return nil
+}
+
+func (a *App) CheckRunningBridgeProcesses() map[string]int {
+	rules := a.saveFile.GetBridgeRules()
+	return bridge.CheckRunningProcesses(rules)
+}
+
+func (a *App) LaunchBridgeRule(ruleID string, exePath string) error {
+	rules := a.saveFile.GetBridgeRules()
+	var rule *bridge.BridgeRule
+	for i := range rules {
+		if rules[i].ID == ruleID {
+			rule = &rules[i]
+			break
+		}
+	}
+	if rule == nil {
+		return fmt.Errorf("rule %s not found", ruleID)
+	}
+
+	target := exePath
+	if target == "" {
+		target = rule.Pattern
+	}
+	return bridge.LaunchWithProxy(target, rule.ProxyTarget, rule.ProxyType)
 }
 

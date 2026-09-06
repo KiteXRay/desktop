@@ -132,6 +132,29 @@ func (i *Interface) Up(local *net.IPNet, gw net.IP) error {
 	return nil
 }
 
+// SetDNS sets the primary DNS server on the Windows TUN adapter using netsh.
+func (i *Interface) SetDNS(dns string) error {
+	if dns == "" {
+		return nil
+	}
+	cmd := exec.Command("netsh", "interface", "ipv4", "set", "dnsservers",
+		fmt.Sprintf("name=%s", i.name),
+		"source=static",
+		fmt.Sprintf("address=%s", dns),
+		"register=none",
+		"validate=no",
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000,
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		slog.Warn("netsh set dnsservers", "err", err, "output", string(out))
+		return err
+	}
+	return nil
+}
+
 // Name returns the interface name.
 func (i *Interface) Name() string {
 	return i.name

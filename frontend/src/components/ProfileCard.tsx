@@ -88,6 +88,11 @@ export const ProfileCard: React.FC<ProfileCardProps> = React.memo(({
             <h3 className="text-xs font-semibold text-slate-100 truncate" title={label}>
               {label}
             </h3>
+            {connection.subscriptionId && (
+              <span className="px-1 py-0.2 text-[8px] font-semibold tracking-wider rounded uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0" title="Subscription profile">
+                Sub
+              </span>
+            )}
             {isConnecting ? (
               <span className="px-1.5 py-0.2 text-[9px] font-medium rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
                 Connecting
@@ -95,10 +100,6 @@ export const ProfileCard: React.FC<ProfileCardProps> = React.memo(({
             ) : isDisconnecting ? (
               <span className="px-1.5 py-0.2 text-[9px] font-medium rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 shrink-0">
                 Disconnecting
-              </span>
-            ) : active ? (
-              <span className="px-1.5 py-0.2 text-[9px] font-medium rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-                Active
               </span>
             ) : null}
           </div>

@@ -46,6 +46,11 @@ func (i *Interface) Up(local *net.IPNet, gw net.IP) error {
 	return i.up(local, gw) // call OS specific up function.
 }
 
+// SetDNS is a stub on non-Windows platforms (DNS routing is handled via route table or systemd-resolved).
+func (i *Interface) SetDNS(dns string) error {
+	return nil
+}
+
 // Name returns the interface name of ifce, e.g. tun0, tap1, tun0, etc..
 func (i *Interface) Name() string {
 	return i.ifc.Name()

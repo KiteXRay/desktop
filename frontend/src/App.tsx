@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus,
   Power,
@@ -13,19 +13,25 @@ import {
   ArrowUp,
   ArrowDown,
   Globe,
-  Rocket
+  Settings,
+  Network,
+  Layers,
+  Copy,
+  ChevronDown,
+  RotateCw,
+  Trash2,
+  HardDrive,
+  Rss,
 } from 'lucide-react';
 import { api } from './api/wails';
-import type { ConnectionDTO, TunnelMode, InstalledApp, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO } from './types';
+import type { ConnectionDTO, TunnelMode, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO, Subscription } from './types';
 import { ProfileCard } from './components/ProfileCard';
 import { NetworkChart } from './components/NetworkChart';
-import { ConfigDetails } from './components/ConfigDetails';
 import { AddEditModal } from './components/AddEditModal';
-import { SelectAppModal } from './components/SelectAppModal';
 import { UpdateModal } from './components/UpdateModal';
 import { PrivilegeModal } from './components/PrivilegeModal';
 import { AboutView } from './components/AboutView';
-import { PerAppView } from './components/PerAppView';
+import { ModeSettingsModal } from './components/ModeSettingsModal';
 import { formatBytes } from './utils/formatters';
 import { useConnections } from './hooks/useConnections';
 
@@ -57,11 +63,10 @@ export function App() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editItem, setEditItem] = useState<ConnectionDTO | null>(null);
   const [currentTab, setCurrentTab] = useState<'connections' | 'about'>('connections');
-  const [tunnelMode, setTunnelMode] = useState<TunnelMode>('system');
+  const [tunnelMode, setTunnelMode] = useState<TunnelMode>('tunnel');
+  const [isModeSettingsOpen, setIsModeSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'tunnel' | 'proxy' | 'bridge'>('tunnel');
   const [isClearingTun, setIsClearingTun] = useState(false);
-  const [isLaunchingExe, setIsLaunchingExe] = useState(false);
-  const [isSelectAppModalOpen, setIsSelectAppModalOpen] = useState(false);
-  const [targetConnForApp, setTargetConnForApp] = useState<string | null>(null);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [updateInfo, setUpdateInfo] = useState<ReleaseInfo | null>(null);
@@ -80,6 +85,144 @@ export function App() {
   const [pings, setPings] = useState<Record<string, number>>({});
   const [pingingIds, setPingingIds] = useState<Record<string, boolean>>({});
   const [isPingingAll, setIsPingingAll] = useState(false);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [updatingSubIds, setUpdatingSubIds] = useState<Record<string, boolean>>({});
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+
+  const loadSubscriptions = useCallback(async () => {
+    try {
+      const subs = await api.getSubscriptions();
+      setSubscriptions(subs || []);
+    } catch (err) {
+      console.debug('Failed to load subscriptions:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSubscriptions();
+  }, [loadSubscriptions, connections]);
+
+  const toggleGroupCollapse = (groupId: string) => {
+    setCollapsedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
+  };
+
+  const handleUpdateSubscription = async (subId: string) => {
+    setUpdatingSubIds(prev => ({ ...prev, [subId]: true }));
+    try {
+      await api.updateSubscription(subId);
+      await loadConnections();
+      await loadSubscriptions();
+      showToast('Subscription updated successfully', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to update subscription', 'error');
+    } finally {
+      setUpdatingSubIds(prev => ({ ...prev, [subId]: false }));
+    }
+  };
+
+  const handleDeleteSubscription = async (subId: string, subLabel: string) => {
+    if (!window.confirm(`Delete subscription "${subLabel}" and all its profiles?`)) {
+      return;
+    }
+    try {
+      await api.deleteSubscription(subId);
+      await loadConnections();
+      await loadSubscriptions();
+      showToast(`Subscription "${subLabel}" deleted`, 'info');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to delete subscription', 'error');
+    }
+  };
+
+  interface ProfileGroup {
+    id: string;
+    title: string;
+    type: 'local' | 'subscription';
+    subscription?: Subscription;
+    items: Array<{
+      item: ConnectionDTO;
+      globalIndex: number;
+    }>;
+  }
+
+  function getSubscriptionGroupName(sub: Subscription): string {
+    if (sub.subId) {
+      return `Subscription-${sub.subId}`;
+    }
+    if (sub.label && sub.label.startsWith('Subscription-')) {
+      return sub.label;
+    }
+    const match = sub.url?.match(/\/(?:sub|clash|subscription|subscribe)\/([a-zA-Z0-9_-]+)/i);
+    if (match && match[1]) {
+      return `Subscription-${match[1]}`;
+    }
+    try {
+      const urlObj = new URL(sub.url);
+      const token = urlObj.searchParams.get('token') || urlObj.searchParams.get('subid') || urlObj.searchParams.get('id');
+      if (token) {
+        return `Subscription-${token}`;
+      }
+    } catch {}
+    return sub.label || `Subscription-${sub.id.replace(/^sub-/, '')}`;
+  }
+
+  const groups = useMemo<ProfileGroup[]>(() => {
+    const result: ProfileGroup[] = [];
+
+    // 1. Local group (items without subscriptionId)
+    const localItems: Array<{ item: ConnectionDTO; globalIndex: number }> = [];
+    connections.forEach((item, idx) => {
+      if (!item.subscriptionId) {
+        localItems.push({ item, globalIndex: idx });
+      }
+    });
+
+    if (localItems.length > 0 || subscriptions.length === 0) {
+      result.push({
+        id: 'local',
+        title: 'Local',
+        type: 'local',
+        items: localItems,
+      });
+    }
+
+    // 2. Subscription groups
+    subscriptions.forEach((sub) => {
+      const subItems: Array<{ item: ConnectionDTO; globalIndex: number }> = [];
+      connections.forEach((item, idx) => {
+        if (item.subscriptionId === sub.id) {
+          subItems.push({ item, globalIndex: idx });
+        }
+      });
+
+      result.push({
+        id: sub.id,
+        title: getSubscriptionGroupName(sub),
+        type: 'subscription',
+        subscription: sub,
+        items: subItems,
+      });
+    });
+
+    // 3. Catch-all for any orphaned subscription items
+    const knownSubIds = new Set(subscriptions.map(s => s.id));
+    const orphanItems: Array<{ item: ConnectionDTO; globalIndex: number }> = [];
+    connections.forEach((item, idx) => {
+      if (item.subscriptionId && !knownSubIds.has(item.subscriptionId)) {
+        orphanItems.push({ item, globalIndex: idx });
+      }
+    });
+    if (orphanItems.length > 0) {
+      result.push({
+        id: 'other-subscriptions',
+        title: 'Other Subscriptions',
+        type: 'subscription',
+        items: orphanItems,
+      });
+    }
+
+    return result;
+  }, [connections, subscriptions]);
 
   useEffect(() => {
     // Check network privileges on startup
@@ -123,10 +266,31 @@ export function App() {
       }
     }, 2000);
 
+    api.getTunnelMode().then((mode) => {
+      if (mode === 'proxy' || mode === 'bridge' || mode === 'tunnel') {
+        setTunnelMode(mode);
+      } else if (mode === 'per_app') {
+        setTunnelMode('bridge');
+      } else {
+        setTunnelMode('tunnel');
+      }
+    }).catch(() => {});
+
+    const unsubMode = api.onModeChanged((mode) => {
+      if (mode === 'proxy' || mode === 'bridge' || mode === 'tunnel') {
+        setTunnelMode(mode as TunnelMode);
+      } else if (mode === 'per_app') {
+        setTunnelMode('bridge');
+      } else {
+        setTunnelMode('tunnel');
+      }
+    });
+
     return () => {
       unsubPrivs();
       unsubProgress();
       unsubPing();
+      unsubMode();
       clearTimeout(timer);
     };
   }, []);
@@ -189,13 +353,26 @@ export function App() {
     setTunnelMode(newMode);
     try {
       await api.setTunnelMode(newMode);
+      const labels: Record<string, string> = {
+        tunnel: 'System Tunnel',
+        system: 'System Tunnel',
+        proxy: 'System Proxy',
+        bridge: 'Bridge Rules',
+        per_app: 'Bridge Rules',
+      };
       showToast(
-        `Switched to ${newMode === 'per_app' ? 'App' : 'System'}`,
+        `Switched to ${labels[newMode] || newMode}`,
         'info'
       );
     } catch (err: any) {
       showToast(`Failed to switch mode: ${err?.message || err}`, 'error');
     }
+  };
+
+  const handleOpenSettings = (tab?: 'tunnel' | 'proxy' | 'bridge') => {
+    const target = tab || (tunnelMode === 'bridge' || tunnelMode === 'per_app' ? 'bridge' : tunnelMode === 'proxy' ? 'proxy' : 'tunnel');
+    setSettingsTab(target);
+    setIsModeSettingsOpen(true);
   };
 
   const handleSmartConnect = () => {
@@ -206,17 +383,6 @@ export function App() {
     } else {
       setIsAddModalOpen(true);
     }
-  };
-
-  const handleOpenAppSelector = (targetConnId?: string) => {
-    const connId = targetConnId || selectedConnection?.id || activeConnection?.id || connections[0]?.id;
-    if (!connId) {
-      showToast('Please add or select a profile first', 'error');
-      setIsAddModalOpen(true);
-      return;
-    }
-    setTargetConnForApp(connId);
-    setIsSelectAppModalOpen(true);
   };
 
   const handlePing = useCallback(async (id: string) => {
@@ -252,62 +418,6 @@ export function App() {
       setPingingIds({});
     }
   }, [connections, isPingingAll, showToast]);
-
-  const handleAppSelected = async (app: InstalledApp) => {
-    setIsSelectAppModalOpen(false);
-    const connId = targetConnForApp || selectedConnection?.id || activeConnection?.id || connections[0]?.id;
-    if (!connId) return;
-
-    try {
-      setIsLaunchingExe(true);
-      showToast(`Routing ${app.name} through Kite proxy...`, 'info');
-
-      if (tunnelMode !== 'per_app') {
-        await handleModeChange('per_app');
-      }
-
-      await api.launchAndRouteApp(connId, app.exePath);
-      showToast(`Started proxy and launched ${app.name}!`, 'success');
-    } catch (err: any) {
-      showToast(`Failed to route ${app.name}: ${err?.message || err}`, 'error');
-    } finally {
-      setIsLaunchingExe(false);
-    }
-  };
-
-  const handleBrowseManual = async () => {
-    setIsSelectAppModalOpen(false);
-    await handleSelectAndRouteExe(targetConnForApp || undefined);
-  };
-
-  const handleSelectAndRouteExe = async (targetConnId?: string) => {
-    const connId = targetConnId || selectedConnection?.id || activeConnection?.id || connections[0]?.id;
-    if (!connId) {
-      showToast('Please add or select a profile first', 'error');
-      setIsAddModalOpen(true);
-      return;
-    }
-
-    try {
-      const selectedPath = await api.selectExecutableDialog();
-      if (!selectedPath) return;
-
-      setIsLaunchingExe(true);
-      const appName = selectedPath.split(/[/\\]/).pop() || selectedPath;
-      showToast(`Routing ${appName} through Kite proxy...`, 'info');
-
-      if (tunnelMode !== 'per_app') {
-        await handleModeChange('per_app');
-      }
-
-      await api.launchAndRouteApp(connId, selectedPath);
-      showToast(`Started proxy and launched ${appName}!`, 'success');
-    } catch (err: any) {
-      showToast(`Failed to route app: ${err?.message || err}`, 'error');
-    } finally {
-      setIsLaunchingExe(false);
-    }
-  };
 
   const isSelectedActive = activeStats?.id === selectedConnection?.id && selectedConnection?.active;
   const displayBytesRead = isSelectedActive ? activeStats.bytesRead : (selectedConnection?.bytesRead ?? 0);
@@ -437,31 +547,54 @@ export function App() {
 
           <div className="h-5 w-px bg-slate-800/80 shrink-0" />
 
+          {/* Settings Button on the left of TPBS */}
+          <button
+            onClick={() => handleOpenSettings()}
+            className="flex items-center justify-center w-7 h-7 rounded-full bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-indigo-400 border border-slate-800 hover:border-slate-700 transition-all shadow-xs active:scale-95 cursor-pointer shrink-0"
+            title="Routing Mode Settings (Tunnel / Proxy / Bridge)"
+          >
+            <Settings className="w-3.5 h-3.5" />
+          </button>
+
           {/* Mode Switcher Segmented Control */}
-          <div className="flex items-center bg-slate-900 p-1 rounded-full border border-slate-800 shadow-inner shrink-0">
+          <div className="flex items-center bg-slate-900 p-0.5 rounded-full border border-slate-800 shadow-inner shrink-0">
             <button
-              onClick={() => handleModeChange('system')}
+              onClick={() => handleModeChange('tunnel')}
               className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
-                tunnelMode === 'system'
+                tunnelMode === 'tunnel' || tunnelMode === 'system'
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
-              title="System-Wide: Routes 100% of computer network traffic through VPN"
+              title="System Tunnel: Virtual TUN adapter routing network traffic with custom IP & DNS"
             >
               <Globe className="w-3.5 h-3.5" />
-              <span>System</span>
+              <span>Tunnel</span>
             </button>
+
             <button
-              onClick={() => handleModeChange('per_app')}
+              onClick={() => handleModeChange('proxy')}
               className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
-                tunnelMode === 'per_app'
+                tunnelMode === 'proxy'
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
-              title="App Tunnel: Inbound SOCKS5 & HTTP proxies for selected apps"
+              title="System Proxy: System-wide proxy via WinINet/desktop settings without TUN driver"
             >
-              <Rocket className="w-3.5 h-3.5" />
-              <span>App</span>
+              <Network className="w-3.5 h-3.5" />
+              <span>Proxy</span>
+            </button>
+
+            <button
+              onClick={() => handleModeChange('bridge')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                tunnelMode === 'bridge' || tunnelMode === 'per_app'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Bridge: Match executables via wildcards/regex with rules table and launcher"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Bridge</span>
             </button>
           </div>
 
@@ -552,14 +685,6 @@ export function App() {
               }}
             />
           </div>
-        ) : tunnelMode === 'per_app' ? (
-          <div className="h-full overflow-y-auto">
-            <PerAppView
-              isConnected={!!activeConnection}
-              activeLabel={activeConnection?.label}
-              onConnect={handleSmartConnect}
-            />
-          </div>
         ) : connections.length === 0 ? (
           /* Empty State */
           <div className="h-full flex flex-col items-center justify-center p-8 text-center">
@@ -601,44 +726,120 @@ export function App() {
                 </button>
               </div>
 
-              {connections.map((item, idx) => {
-                const isCardActive = activeStats?.id === item.id && item.active;
-                const cardItem = {
-                  ...(isCardActive
-                    ? {
-                        ...item,
-                        bytesRead: activeStats.bytesRead,
-                        bytesWritten: activeStats.bytesWritten,
-                        totalBytes: activeStats.totalBytes ?? (activeStats.bytesRead + activeStats.bytesWritten),
-                      }
-                    : item),
-                  pingMs: pings[item.id],
-                };
+              {groups.map((group) => {
+                const isCollapsed = !!collapsedGroups[group.id];
+                const isUpdating = !!updatingSubIds[group.id];
+
                 return (
-                  <ProfileCard
-                    key={item.id}
-                    connection={cardItem}
-                    index={idx}
-                    isSelected={selectedConnection?.id === item.id}
-                    onSelect={() => setSelectedId(item.id)}
-                    onConnect={() => handleConnect(item.id)}
-                    onEdit={() => {
-                      setEditItem(item);
-                      setIsAddModalOpen(true);
-                    }}
-                    onDelete={() => handleDelete(item.id)}
-                    onResetTraffic={() => handleResetTraffic(item.id)}
-                    onPing={() => handlePing(item.id)}
-                    isPinging={!!pingingIds[item.id] || isPingingAll}
-                    onDragStart={handleDragStart}
-                    onDragOver={handleDragOver}
-                    onDrop={handleDrop}
-                    onDragEnd={handleDragEnd}
-                    isDragging={draggedIndex === idx}
-                    isDragOver={dragOverIndex === idx && draggedIndex !== idx}
-                    isConnecting={connectingId === item.id}
-                    isDisconnecting={disconnectingId === item.id}
-                  />
+                  <div key={group.id} className="flex flex-col gap-2">
+                    {/* Group Header */}
+                    <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800/80 select-none shadow-xs">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroupCollapse(group.id)}
+                        className="flex items-center gap-2 text-left min-w-0 flex-1 hover:text-white transition-colors cursor-pointer"
+                      >
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-150 ${
+                            isCollapsed ? '-rotate-90' : ''
+                          }`}
+                        />
+                        {group.type === 'local' ? (
+                          <HardDrive className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                        ) : (
+                          <Rss className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        )}
+                        <span className="text-xs font-semibold text-slate-200 truncate">
+                          {group.title}
+                        </span>
+                        <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-medium bg-slate-800 text-slate-400 border border-slate-700/50 shrink-0">
+                          {group.items.length}
+                        </span>
+                      </button>
+
+                      {/* Group Actions for subscriptions */}
+                      {group.type === 'subscription' && (
+                        <div className="flex items-center gap-1 shrink-0 ml-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUpdateSubscription(group.id);
+                            }}
+                            disabled={isUpdating}
+                            title="Update subscription links"
+                            className="p-1 rounded-md text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            <RotateCw className={`w-3 h-3 ${isUpdating ? 'animate-spin text-amber-400' : ''}`} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSubscription(group.id, group.title);
+                            }}
+                            title="Delete subscription group"
+                            className="p-1 rounded-md text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Group Items */}
+                    {!isCollapsed && (
+                      <div className="flex flex-col gap-2">
+                        {group.items.length === 0 ? (
+                          <div className="px-3 py-3 text-center text-slate-500 text-xs rounded-xl bg-slate-900/20 border border-dashed border-slate-800/60">
+                            No profiles in this group
+                          </div>
+                        ) : (
+                          group.items.map(({ item, globalIndex }) => {
+                            const isCardActive = activeStats?.id === item.id && item.active;
+                            const cardItem = {
+                              ...(isCardActive
+                                ? {
+                                    ...item,
+                                    bytesRead: activeStats.bytesRead,
+                                    bytesWritten: activeStats.bytesWritten,
+                                    totalBytes: activeStats.totalBytes ?? (activeStats.bytesRead + activeStats.bytesWritten),
+                                  }
+                                : item),
+                              pingMs: pings[item.id],
+                            };
+
+                            return (
+                              <ProfileCard
+                                key={item.id}
+                                connection={cardItem}
+                                index={globalIndex}
+                                isSelected={selectedConnection?.id === item.id}
+                                onSelect={() => setSelectedId(item.id)}
+                                onConnect={() => handleConnect(item.id)}
+                                onEdit={() => {
+                                  setEditItem(item);
+                                  setIsAddModalOpen(true);
+                                }}
+                                onDelete={() => handleDelete(item.id)}
+                                onResetTraffic={() => handleResetTraffic(item.id)}
+                                onPing={() => handlePing(item.id)}
+                                isPinging={!!pingingIds[item.id] || isPingingAll}
+                                onDragStart={handleDragStart}
+                                onDragOver={handleDragOver}
+                                onDrop={handleDrop}
+                                onDragEnd={handleDragEnd}
+                                isDragging={draggedIndex === globalIndex}
+                                isDragOver={dragOverIndex === globalIndex && draggedIndex !== globalIndex}
+                                isConnecting={connectingId === item.id}
+                                isDisconnecting={disconnectingId === item.id}
+                              />
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -660,9 +861,16 @@ export function App() {
                           <h2 className="text-base font-bold text-slate-100 truncate" title={selectedConnection.label}>
                             {selectedConnection.label}
                           </h2>
-                          {selectedConnection.active && (
-                            <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                              Connected
+                          {selectedConnection.subscriptionId ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
+                              {(() => {
+                                const sub = subscriptions.find(s => s.id === selectedConnection.subscriptionId);
+                                return sub ? getSubscriptionGroupName(sub) : 'Subscription';
+                              })()}
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shrink-0">
+                              Local
                             </span>
                           )}
                         </div>
@@ -672,71 +880,85 @@ export function App() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handlePing(selectedConnection.id)}
-                        disabled={!!pingingIds[selectedConnection.id] || isPingingAll}
-                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-mono border cursor-pointer transition-all ${
-                          pingingIds[selectedConnection.id] || isPingingAll
-                            ? 'text-indigo-300 bg-indigo-950/40 border-indigo-700/50 animate-pulse'
-                            : pings[selectedConnection.id] !== undefined && pings[selectedConnection.id] > 0
-                            ? pings[selectedConnection.id] < 120
-                              ? 'text-emerald-400 bg-emerald-950/30 border-emerald-800/40 hover:bg-emerald-900/40'
-                              : pings[selectedConnection.id] < 250
-                              ? 'text-amber-400 bg-amber-950/30 border-amber-800/40 hover:bg-amber-900/40'
-                              : 'text-rose-400 bg-rose-950/30 border-rose-800/40 hover:bg-rose-900/40'
-                            : pings[selectedConnection.id] === -1
-                            ? 'text-rose-400 bg-rose-950/30 border-rose-800/40'
-                            : 'text-slate-400 bg-slate-800/60 border-slate-700 hover:text-white'
-                        }`}
-                        title="Ping server"
-                      >
-                        <Activity className={`w-3.5 h-3.5 ${pingingIds[selectedConnection.id] || isPingingAll ? 'animate-spin' : ''}`} />
-                        <span>
-                          {pingingIds[selectedConnection.id] || isPingingAll
-                            ? 'Pinging...'
-                            : pings[selectedConnection.id] !== undefined && pings[selectedConnection.id] > 0
-                            ? `${pings[selectedConnection.id]} ms`
-                            : pings[selectedConnection.id] === -1
-                            ? 'Timeout'
-                            : 'Ping'}
-                        </span>
-                      </button>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handlePing(selectedConnection.id)}
+                          disabled={!!pingingIds[selectedConnection.id] || isPingingAll}
+                          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-mono border cursor-pointer transition-all ${
+                            pingingIds[selectedConnection.id] || isPingingAll
+                              ? 'text-indigo-300 bg-indigo-950/40 border-indigo-700/50 animate-pulse'
+                              : pings[selectedConnection.id] !== undefined && pings[selectedConnection.id] > 0
+                              ? pings[selectedConnection.id] < 120
+                                ? 'text-emerald-400 bg-emerald-950/30 border-emerald-800/40 hover:bg-emerald-900/40'
+                                : pings[selectedConnection.id] < 250
+                                ? 'text-amber-400 bg-amber-950/30 border-amber-800/40 hover:bg-amber-900/40'
+                                : 'text-rose-400 bg-rose-950/30 border-rose-800/40 hover:bg-rose-900/40'
+                              : pings[selectedConnection.id] === -1
+                              ? 'text-rose-400 bg-rose-950/30 border-rose-800/40'
+                              : 'text-slate-400 bg-slate-800/60 border-slate-700 hover:text-white'
+                          }`}
+                          title="Ping server"
+                        >
+                          <Activity className={`w-3.5 h-3.5 ${pingingIds[selectedConnection.id] || isPingingAll ? 'animate-spin' : ''}`} />
+                          <span>
+                            {pingingIds[selectedConnection.id] || isPingingAll
+                              ? 'Pinging...'
+                              : pings[selectedConnection.id] !== undefined && pings[selectedConnection.id] > 0
+                              ? `${pings[selectedConnection.id]} ms`
+                              : pings[selectedConnection.id] === -1
+                              ? 'Timeout'
+                              : 'Ping'}
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={() => handleConnect(selectedConnection.id)}
+                          disabled={connectingId === selectedConnection.id || disconnectingId === selectedConnection.id}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all shadow-md ${
+                            connectingId === selectedConnection.id
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-wait'
+                              : disconnectingId === selectedConnection.id
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 cursor-wait'
+                              : selectedConnection.active
+                              ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 active:scale-95'
+                              : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 active:scale-95'
+                          }`}
+                        >
+                          {connectingId === selectedConnection.id ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                              <span>Connecting...</span>
+                            </>
+                          ) : disconnectingId === selectedConnection.id ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin text-rose-400" />
+                              <span>Disconnecting...</span>
+                            </>
+                          ) : selectedConnection.active ? (
+                            <>
+                              <Power className="w-4 h-4" />
+                              <span>Disconnect</span>
+                            </>
+                          ) : (
+                            <>
+                              <Power className="w-4 h-4" />
+                              <span>Connect</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
 
                       <button
-                        onClick={() => handleConnect(selectedConnection.id)}
-                        disabled={connectingId === selectedConnection.id || disconnectingId === selectedConnection.id}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all shadow-md ${
-                          connectingId === selectedConnection.id
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-wait'
-                            : disconnectingId === selectedConnection.id
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 cursor-wait'
-                            : selectedConnection.active
-                            ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 active:scale-95'
-                            : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 active:scale-95'
-                        }`}
+                        onClick={() => {
+                          navigator.clipboard.writeText(selectedConnection.link);
+                          showToast('Connection link copied to clipboard', 'success');
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-400 hover:text-slate-200 bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-slate-600 rounded-lg transition-all active:scale-95 cursor-pointer"
+                        title="Copy profile connection URL"
                       >
-                        {connectingId === selectedConnection.id ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-                            <span>Connecting...</span>
-                          </>
-                        ) : disconnectingId === selectedConnection.id ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin text-rose-400" />
-                            <span>Disconnecting...</span>
-                          </>
-                        ) : selectedConnection.active ? (
-                          <>
-                            <Power className="w-4 h-4" />
-                            <span>Disconnect</span>
-                          </>
-                        ) : (
-                          <>
-                            <Power className="w-4 h-4" />
-                            <span>Connect</span>
-                          </>
-                        )}
+                        <Copy className="w-3 h-3" />
+                        <span>Copy link</span>
                       </button>
                     </div>
                   </div>
@@ -802,14 +1024,6 @@ export function App() {
                       height={130}
                     />
                   </div>
-
-                  {/* Config Parameters Table & Per-App Action */}
-                  <ConfigDetails
-                    connection={selectedConnection}
-                    tunnelMode={tunnelMode}
-                    onSelectExecutable={() => handleOpenAppSelector(selectedConnection.id)}
-                    isLaunchingApp={isLaunchingExe}
-                  />
                 </>
               )}
             </div>
@@ -826,18 +1040,10 @@ export function App() {
         }}
         onSuccess={() => {
           loadConnections();
+          loadSubscriptions();
           showToast(editItem ? 'Profile updated' : 'Profile added successfully', 'success');
         }}
         editItem={editItem}
-      />
-
-      {/* Select Installed App Modal */}
-      <SelectAppModal
-        isOpen={isSelectAppModalOpen}
-        onClose={() => setIsSelectAppModalOpen(false)}
-        onSelectApp={handleAppSelected}
-        onBrowseManual={handleBrowseManual}
-        isLaunching={isLaunchingExe}
       />
 
       {/* Update Available Modal */}
@@ -847,6 +1053,19 @@ export function App() {
         progress={updateProgress}
         onClose={() => setIsUpdateModalOpen(false)}
         onInstall={handleInstallUpdate}
+      />
+
+      {/* Routing Mode Settings Modal (Tunnel / Proxy / Bridge) */}
+      <ModeSettingsModal
+        isOpen={isModeSettingsOpen}
+        initialTab={settingsTab}
+        onClose={() => setIsModeSettingsOpen(false)}
+        onResetTun={handleClearStuckTun}
+        isResettingTun={isClearingTun}
+        isConnected={!!activeConnection}
+        activeLabel={activeConnection?.label}
+        onConnect={handleSmartConnect}
+        showToast={showToast}
       />
 
       {/* Network Privileges Required Modal */}
