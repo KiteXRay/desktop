@@ -84,26 +84,59 @@ func getProcessNameByPID(pid uint32) string {
 	procCacheMu.RUnlock()
 
 	hProc, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+	if err == nil {
+		defer windows.CloseHandle(hProc)
+
+		var buf [windows.MAX_LONG_PATH]uint16
+		size := uint32(len(buf))
+		if err := windows.QueryFullProcessImageName(hProc, 0, &buf[0], &size); err == nil {
+			name := filepath.Base(windows.UTF16ToString(buf[:size]))
+			procCacheMu.Lock()
+			procCache[pid] = cachedProc{
+				name:      name,
+				expiresAt: time.Now().Add(10 * time.Second),
+			}
+			procCacheMu.Unlock()
+			return name
+		}
+	}
+
+	// Fallback to CreateToolhelp32Snapshot when OpenProcess is blocked by anti-cheat (e.g. Easy Anti-Cheat in The Finals)
+	if name := getProcessNameFromSnapshot(pid); name != "" {
+		procCacheMu.Lock()
+		procCache[pid] = cachedProc{
+			name:      name,
+			expiresAt: time.Now().Add(10 * time.Second),
+		}
+		procCacheMu.Unlock()
+		return name
+	}
+
+	return ""
+}
+
+func getProcessNameFromSnapshot(pid uint32) string {
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
 		return ""
 	}
-	defer windows.CloseHandle(hProc)
+	defer windows.CloseHandle(snapshot)
 
-	var buf [windows.MAX_LONG_PATH]uint16
-	size := uint32(len(buf))
-	if err := windows.QueryFullProcessImageName(hProc, 0, &buf[0], &size); err != nil {
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	if err := windows.Process32First(snapshot, &entry); err != nil {
 		return ""
 	}
 
-	name := filepath.Base(windows.UTF16ToString(buf[:size]))
-	procCacheMu.Lock()
-	procCache[pid] = cachedProc{
-		name:      name,
-		expiresAt: time.Now().Add(10 * time.Second),
+	for {
+		if entry.ProcessID == pid {
+			return filepath.Base(windows.UTF16ToString(entry.ExeFile[:]))
+		}
+		if err := windows.Process32Next(snapshot, &entry); err != nil {
+			break
+		}
 	}
-	procCacheMu.Unlock()
-
-	return name
+	return ""
 }
 
 func getTcpPid(localPort uint16) uint32 {
@@ -131,10 +164,11 @@ func getTcpPidAF(localPort uint16, af uintptr) uint32 {
 			return 0
 		}
 
-		buf := make([]byte, size)
+		allocSize := size + 4096
+		buf := make([]byte, allocSize)
 		ret, _, _ = procGetExtendedTcpTable.Call(
 			uintptr(unsafe.Pointer(&buf[0])),
-			uintptr(unsafe.Pointer(&size)),
+			uintptr(unsafe.Pointer(&allocSize)),
 			0,
 			af,
 			uintptr(tcpTableOwnerPidAll),
@@ -200,10 +234,11 @@ func getUdpPidAF(localPort uint16, af uintptr) uint32 {
 			return 0
 		}
 
-		buf := make([]byte, size)
+		allocSize := size + 4096
+		buf := make([]byte, allocSize)
 		ret, _, _ = procGetExtendedUdpTable.Call(
 			uintptr(unsafe.Pointer(&buf[0])),
-			uintptr(unsafe.Pointer(&size)),
+			uintptr(unsafe.Pointer(&allocSize)),
 			0,
 			af,
 			uintptr(udpTableOwnerPid),

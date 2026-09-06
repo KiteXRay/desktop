@@ -35,7 +35,7 @@ func NewBridgeDialer(defaultSocksAddr string, rulesGetter func() []BridgeRule, l
 	if defaultSocksAddr != "" {
 		parsed, err := parseProxyHostPort(defaultSocksAddr)
 		if err == nil {
-			defProxy, _ = proxy.NewSocks5(parsed, "", "")
+			defProxy, _ = newSocks5Proxy(parsed, "", "")
 		}
 	}
 
@@ -49,17 +49,26 @@ func NewBridgeDialer(defaultSocksAddr string, rulesGetter func() []BridgeRule, l
 	}
 }
 
+func getProcessWithRetry(isTCP bool, port uint16) (string, uint32) {
+	procName, pid := GetProcessByPort(isTCP, port)
+	if procName != "" {
+		return procName, pid
+	}
+	for _, delay := range []time.Duration{2 * time.Millisecond, 5 * time.Millisecond, 10 * time.Millisecond, 15 * time.Millisecond} {
+		time.Sleep(delay)
+		procName, pid = GetProcessByPort(isTCP, port)
+		if procName != "" {
+			return procName, pid
+		}
+	}
+	return "", 0
+}
+
 func (b *BridgeDialer) DialContext(ctx context.Context, metadata *M.Metadata) (net.Conn, error) {
 	dstAddr := metadata.DestinationAddress()
 	isTCP := metadata.Network == M.TCP
 
-	procName, pid := GetProcessByPort(isTCP, metadata.SrcPort)
-	if procName == "" {
-		// Minor backoff retry in case OS socket table update was delayed
-		time.Sleep(2 * time.Millisecond)
-		procName, pid = GetProcessByPort(isTCP, metadata.SrcPort)
-	}
-
+	procName, pid := getProcessWithRetry(isTCP, metadata.SrcPort)
 	matchedRule := b.matchRule(procName)
 	if matchedRule != nil {
 		b.logger.Info("Bridge routing process via proxy",
@@ -73,6 +82,13 @@ func (b *BridgeDialer) DialContext(ctx context.Context, metadata *M.Metadata) (n
 		if px != nil {
 			return px.DialContext(ctx, metadata)
 		}
+	} else {
+		b.logger.Debug("Bridge routing TCP direct",
+			"process", procName,
+			"pid", pid,
+			"srcPort", metadata.SrcPort,
+			"dst", dstAddr,
+		)
 	}
 
 	return b.directProxy.DialContext(ctx, metadata)
@@ -81,12 +97,7 @@ func (b *BridgeDialer) DialContext(ctx context.Context, metadata *M.Metadata) (n
 func (b *BridgeDialer) DialUDP(metadata *M.Metadata) (net.PacketConn, error) {
 	dstAddr := metadata.DestinationAddress()
 
-	procName, pid := GetProcessByPort(false, metadata.SrcPort)
-	if procName == "" {
-		time.Sleep(2 * time.Millisecond)
-		procName, pid = GetProcessByPort(false, metadata.SrcPort)
-	}
-
+	procName, pid := getProcessWithRetry(false, metadata.SrcPort)
 	matchedRule := b.matchRule(procName)
 	if matchedRule != nil {
 		b.logger.Info("Bridge routing UDP via proxy",
@@ -100,6 +111,13 @@ func (b *BridgeDialer) DialUDP(metadata *M.Metadata) (net.PacketConn, error) {
 		if px != nil {
 			return px.DialUDP(metadata)
 		}
+	} else {
+		b.logger.Debug("Bridge routing UDP direct",
+			"process", procName,
+			"pid", pid,
+			"srcPort", metadata.SrcPort,
+			"dst", dstAddr,
+		)
 	}
 
 	return b.directProxy.DialUDP(metadata)
@@ -148,7 +166,7 @@ func (b *BridgeDialer) getProxyForRule(rule *BridgeRule) proxy.Proxy {
 	if pType == "http" {
 		newPx, err = proxy.NewHTTP(parsedAddr, "", "")
 	} else {
-		newPx, err = proxy.NewSocks5(parsedAddr, "", "")
+		newPx, err = newSocks5Proxy(parsedAddr, "", "")
 	}
 	if err != nil {
 		return b.defaultProxy

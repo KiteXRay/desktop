@@ -1,3 +1,12 @@
+## Kite v1.1.2
+
+### 🎮 Bridge Mode & SOCKS5 Fixes
+
+#### 1. SOCKS5 UDP Relay in Bridge Mode
+- **Loopback Interface Separation**: Resolved an issue where UDP sockets in Bridge mode were bound to the physical network interface, causing the OS to drop UDP packets destined for the local SOCKS5 proxy (`127.0.0.1:10808`). Fixes match connection timeouts in games like *The Finals* (`Discovery.exe`).
+- **Anti-Cheat Process Identification**: Added fallback to `CreateToolhelp32Snapshot` on Windows to reliably resolve process names even when anti-cheat drivers (e.g., Easy Anti-Cheat) restrict process handle creation.
+- **Ephemeral Port Lookup Backoff**: Added retry backoff for socket table lookups to ensure newly bound UDP ephemeral ports are detected reliably.
+
 ## Kite v1.1.1
 
 ### 🚀 Self-Update Architecture & Stability Fixes

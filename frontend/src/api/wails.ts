@@ -139,7 +139,7 @@ export const api = {
     if (app) return app.GetAppInfo();
     return {
       name: 'Kite',
-      version: '1.1.1',
+      version: '1.1.2',
       repoUrl: 'https://github.com/KiteXRay/desktop',
       os: 'linux',
       arch: 'amd64',
