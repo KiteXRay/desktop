@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Download, Sparkles, ExternalLink, X, AlertCircle, Loader2 } from 'lucide-react';
+import { marked } from 'marked';
 import type { ReleaseInfo, UpdateProgress } from '../types';
 
 interface UpdateModalProps {
@@ -33,9 +34,28 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   const isError = progress?.status === 'error';
   const isBusy = isDownloading || isApplying;
 
+  const renderedNotes = useMemo(() => {
+    if (!updateInfo.releaseNotes) return '<p class="text-slate-500 italic">No changelog provided.</p>';
+    try {
+      const renderer = new marked.Renderer();
+      renderer.link = ({ href, title, text }) => {
+        const titleAttr = title ? ` title="${title}"` : '';
+        return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`;
+      };
+      return marked.parse(updateInfo.releaseNotes, {
+        renderer,
+        gfm: true,
+        breaks: true,
+        async: false,
+      }) as string;
+    } catch {
+      return `<p>${updateInfo.releaseNotes}</p>`;
+    }
+  }, [updateInfo.releaseNotes]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col gap-4 p-5 animate-in zoom-in-95 duration-200">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col gap-4 p-5 animate-in zoom-in-95 duration-200">
         
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
@@ -75,11 +95,14 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
         {(updateInfo.releaseTitle || updateInfo.releaseNotes) && (
           <div className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-slate-400">What's New:</span>
-            <div className="max-h-36 overflow-y-auto rounded-xl bg-slate-950/60 border border-slate-800/80 p-3 text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">
+            <div className="max-h-64 overflow-y-auto rounded-xl bg-slate-950/60 border border-slate-800/80 p-3.5 selectable-text">
               {updateInfo.releaseTitle && (
-                <div className="font-semibold text-slate-200 mb-1.5">{updateInfo.releaseTitle}</div>
+                <div className="font-bold text-slate-100 text-sm mb-2">{updateInfo.releaseTitle}</div>
               )}
-              {updateInfo.releaseNotes || 'No changelog provided.'}
+              <div
+                className="markdown-body"
+                dangerouslySetInnerHTML={{ __html: renderedNotes }}
+              />
             </div>
           </div>
         )}

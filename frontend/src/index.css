@@ -34,3 +34,137 @@ button {
   user-select: text;
   -webkit-user-select: text;
 }
+
+/* Markdown content styling */
+.markdown-body {
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.markdown-body h1 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin-top: 0.75rem;
+  margin-bottom: 0.375rem;
+}
+
+.markdown-body h2 {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin-top: 0.75rem;
+  margin-bottom: 0.375rem;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+  padding-bottom: 0.25rem;
+}
+
+.markdown-body h3 {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-top: 0.625rem;
+  margin-bottom: 0.25rem;
+}
+
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.markdown-body p {
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body li {
+  margin-bottom: 0.2rem;
+}
+
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin-top: 0.2rem;
+  margin-bottom: 0.2rem;
+}
+
+.markdown-body strong {
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.markdown-body em {
+  font-style: italic;
+  color: #94a3b8;
+}
+
+.markdown-body code {
+  background-color: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(51, 65, 85, 0.6);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.7rem;
+  color: #a5b4fc;
+}
+
+.markdown-body pre {
+  background-color: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(51, 65, 85, 0.6);
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: #e2e8f0;
+}
+
+.markdown-body hr {
+  border: 0;
+  border-top: 1px solid rgba(51, 65, 85, 0.6);
+  margin: 0.75rem 0;
+}
+
+.markdown-body a {
+  color: #818cf8;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-body a:hover {
+  color: #a5b4fc;
+}
+
+.markdown-body blockquote {
+  border-left: 3px solid #6366f1;
+  padding-left: 0.5rem;
+  margin-left: 0;
+  color: #94a3b8;
+  font-style: italic;
+}
+
