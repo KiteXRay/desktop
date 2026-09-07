@@ -191,12 +191,14 @@ func initialize() {
 }
 
 type TrayController struct {
-	app      *App
-	mDisconn *systray.MenuItem
-	mOpen    *systray.MenuItem
-	mQuit    *systray.MenuItem
-	mu       sync.Mutex
-	stopTray func()
+	app        *App
+	mDisconn   *systray.MenuItem
+	mOpen      *systray.MenuItem
+	mQuit      *systray.MenuItem
+	mMode      *systray.MenuItem
+	mModeItems map[string]*systray.MenuItem
+	mu         sync.Mutex
+	stopTray   func()
 }
 
 func (tc *TrayController) updateMenu() {
@@ -218,6 +220,38 @@ func (tc *TrayController) updateMenu() {
 			}
 		}()
 	})
+	systray.AddSeparator()
+
+	tc.mMode = systray.AddMenuItem("Mode", "Switch routing mode")
+	tc.mModeItems = make(map[string]*systray.MenuItem)
+	currentMode := tc.app.GetTunnelMode()
+
+	type modeOption struct {
+		mode    string
+		label   string
+		tooltip string
+	}
+	modes := []modeOption{
+		{mode: "tunnel", label: "Tunnel", tooltip: "System Tunnel (TUN)"},
+		{mode: "proxy", label: "Proxy", tooltip: "System Proxy"},
+		{mode: "bridge", label: "Bridge", tooltip: "Bridge (Split Tunneling)"},
+	}
+
+	for _, opt := range modes {
+		targetMode := opt.mode
+		isActive := currentMode == targetMode
+		title := opt.label
+		if isActive {
+			title = "● " + title
+		} else {
+			title = "○ " + title
+		}
+		item := tc.mMode.AddSubMenuItemCheckbox(title, opt.tooltip, isActive)
+		tc.mModeItems[targetMode] = item
+		item.Click(func() {
+			tc.switchMode(targetMode)
+		})
+	}
 	systray.AddSeparator()
 
 	conns := tc.app.GetConnections()
@@ -284,6 +318,12 @@ func (tc *TrayController) updateMenu() {
 		systray.SetIcon(icon.LogoPassive)
 		systray.SetTooltip(AppTitleName)
 	}
+}
+
+func (tc *TrayController) switchMode(targetMode string) {
+	go func() {
+		_ = tc.app.SetTunnelMode(targetMode)
+	}()
 }
 
 func setupSystray(app *App) *TrayController {

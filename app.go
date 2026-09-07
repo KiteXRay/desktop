@@ -1060,6 +1060,9 @@ func (a *App) SetTunnelMode(mode string) error {
 				slog.Error("failed to reconnect with new mode", "error", err)
 				item.SetActive(false)
 				a.SetActiveID("")
+				if a.onTrayUpdate != nil {
+					a.onTrayUpdate()
+				}
 				if a.ctx != nil {
 					wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
 						"status": "error",
@@ -1079,9 +1082,6 @@ func (a *App) SetTunnelMode(mode string) error {
 				a.systemProxyOn = false
 			}
 
-			if a.onTrayUpdate != nil {
-				a.onTrayUpdate()
-			}
 			if a.ctx != nil {
 				wruntime.EventsEmit(a.ctx, "connections:changed", a.GetConnections())
 				wruntime.EventsEmit(a.ctx, "proxy:status", a.systemProxyOn)
@@ -1104,6 +1104,10 @@ func (a *App) SetTunnelMode(mode string) error {
 	if a.ctx != nil {
 		wruntime.EventsEmit(a.ctx, "proxy:status", a.systemProxyOn)
 		wruntime.EventsEmit(a.ctx, "mode:changed", mode)
+	}
+
+	if a.onTrayUpdate != nil {
+		a.onTrayUpdate()
 	}
 
 	return nil
