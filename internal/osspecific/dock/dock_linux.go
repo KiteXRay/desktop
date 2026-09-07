@@ -140,9 +140,3 @@ func resizeImage(src image.Image, w, h int) image.Image {
 func SaveAppDelegate() {}
 
 func RestoreAppDelegate() {}
-
-func RunOnMainThread(fn func()) {
-	if fn != nil {
-		fn()
-	}
-}
