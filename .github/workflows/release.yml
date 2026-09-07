@@ -39,7 +39,7 @@ jobs:
       - name: Build Application
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.2.1"; fi
           wails build -tags webkit2_41 -skipbindings -ldflags "-X main.appVersion=${VERSION}"
           go build -ldflags "-s -w" -o build/bin/kite-tunnel ./cmd/kite-tunnel
           if [ -f build/bin/Kite ] && [ ! -f build/bin/kite ]; then
@@ -62,7 +62,7 @@ jobs:
       - name: Build Debian Package (.deb)
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.2.1"; fi
           ./scripts/package_deb.sh "$VERSION" amd64
 
       - name: Clean Stale Release Assets
@@ -123,7 +123,7 @@ jobs:
         shell: pwsh
         run: |
           $ver = "${env:GITHUB_REF_NAME}".TrimStart("v")
-          if (-not $ver -or $ver -eq "main") { $ver = "1.1.0" }
+          if (-not $ver -or $ver -eq "main") { $ver = "1.2.1" }
           wails build -platform windows/amd64 -nsis -skipbindings -ldflags "-X main.appVersion=$ver"
           $inst = Get-ChildItem -Path "build\bin" -Filter "*installer.exe" | Select-Object -First 1
           if ($inst) {
@@ -191,7 +191,7 @@ jobs:
       - name: Build Application
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.2.1"; fi
           wails build -platform darwin/universal -skipbindings -ldflags "-X main.appVersion=${VERSION}"
           CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w" -o build/bin/kite-tunnel-amd64 ./cmd/kite-tunnel
           CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o build/bin/kite-tunnel-arm64 ./cmd/kite-tunnel
@@ -205,7 +205,7 @@ jobs:
       - name: Package Release (.dmg)
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.2.1"; fi
           ./scripts/package_dmg.sh "${VERSION}" "universal"
           cp build/bin/kite-macos-universal.dmg ./ || true
 

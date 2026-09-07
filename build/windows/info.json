@@ -2,13 +2,13 @@
   "FixedFileInfo": {
     "FileVersion": {
       "Major": 1,
-      "Minor": 1,
+      "Minor": 2,
       "Patch": 1,
       "Build": 0
     },
     "ProductVersion": {
       "Major": 1,
-      "Minor": 1,
+      "Minor": 2,
       "Patch": 1,
       "Build": 0
     },
@@ -22,13 +22,13 @@
     "Comments": "Lightweight & Agile Desktop VPN Client",
     "CompanyName": "Kite",
     "FileDescription": "Kite VPN Client",
-    "FileVersion": "1.1.0.0",
+    "FileVersion": "1.2.1.0",
     "InternalName": "kite.exe",
     "LegalCopyright": "Copyright 2024 Kite",
     "LegalTrademarks": "",
     "OriginalFilename": "kite.exe",
     "ProductName": "Kite",
-    "ProductVersion": "1.1.0.0"
+    "ProductVersion": "1.2.1.0"
   },
   "VarFileInfo": {
     "Translation": {

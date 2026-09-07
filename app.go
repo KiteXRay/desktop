@@ -591,7 +591,7 @@ func (a *App) ResetTraffic(id string) error {
 	return nil
 }
 
-var appVersion = "1.2.0"
+var appVersion = "1.2.1"
 
 func (a *App) GetAppInfo() AppInfoDTO {
 	return AppInfoDTO{

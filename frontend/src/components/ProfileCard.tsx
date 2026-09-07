@@ -93,15 +93,6 @@ export const ProfileCard: React.FC<ProfileCardProps> = React.memo(({
                 Sub
               </span>
             )}
-            {isConnecting ? (
-              <span className="px-1.5 py-0.2 text-[9px] font-medium rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
-                Connecting
-              </span>
-            ) : isDisconnecting ? (
-              <span className="px-1.5 py-0.2 text-[9px] font-medium rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 shrink-0">
-                Disconnecting
-              </span>
-            ) : null}
           </div>
         </div>
 
