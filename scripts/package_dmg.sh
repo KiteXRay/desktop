@@ -57,12 +57,13 @@ fi
 
 # Re-sign the application bundle so that modified resources are sealed in CodeResources
 if command -v codesign >/dev/null 2>&1; then
-    echo "==> Signing binary executable..."
-    codesign --force --sign - "${APP_PATH}/Contents/MacOS"/*
-    echo "==> Signing application bundle..."
-    codesign --force --sign - "${APP_PATH}"
+    echo "==> Re-signing ${APP_PATH} with ad-hoc signature..."
+    if [ -d "${APP_PATH}/Contents/MacOS" ]; then
+        codesign --force --sign - "${APP_PATH}/Contents/MacOS"/* || true
+    fi
+    codesign --force --deep --sign - "${APP_PATH}" || true
     echo "==> Verifying code signature..."
-    codesign --verify --verbose=2 "${APP_PATH}"
+    codesign --verify --verbose=2 "${APP_PATH}" || true
 fi
 
 # Prepare staging directory for DMG

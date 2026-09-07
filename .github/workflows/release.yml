@@ -64,7 +64,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete-asset "$GITHUB_REF_NAME" checksums-linux.txt checksums-macos.txt checksums-windows.txt -y 2>/dev/null || true
+          for asset in checksums-linux.txt checksums-macos.txt checksums-windows.txt kite-windows-amd64.zip kite-macos-universal.zip; do
+            gh release delete-asset "$GITHUB_REF_NAME" "$asset" -y 2>/dev/null || true
+          done
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
@@ -131,7 +133,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete-asset "$GITHUB_REF_NAME" Kite-amd64-installer.exe kite-windows-amd64.zip -y 2>/dev/null || true
+          for asset in Kite-amd64-installer.exe kite-windows-amd64.zip; do
+            gh release delete-asset "$GITHUB_REF_NAME" "$asset" -y 2>/dev/null || true
+          done
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
@@ -182,7 +186,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete-asset "$GITHUB_REF_NAME" kite-macos-universal.zip -y 2>/dev/null || true
+          for asset in kite-macos-universal.zip checksums-macos.txt; do
+            gh release delete-asset "$GITHUB_REF_NAME" "$asset" -y 2>/dev/null || true
+          done
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
