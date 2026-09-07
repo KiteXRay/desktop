@@ -68,12 +68,18 @@ func GrantPrivilegesViaPkexec() error {
 
 func GrantPrivilegesAndRestart() error {
 	if tunnelBin, err := FindTunnelBinary(); err == nil && tunnelBin != "" {
+		homeDir, _ := os.UserHomeDir()
+		cfgDir := filepath.Join(homeDir, "Library", "Application Support", "kite")
 		asScript := `on run argv
     set targetBin to item 1 of argv
+    set cfgDir to item 2 of argv
     set scriptText to "chown root:wheel " & quoted form of targetBin & " && chmod 4755 " & quoted form of targetBin
+    if cfgDir is not "" then
+        set scriptText to scriptText & " && if [ -d " & quoted form of cfgDir & " ]; then chown -R " & (do shell script "id -u") & ":" & (do shell script "id -g") & " " & quoted form of cfgDir & "; fi"
+    end if
     do shell script scriptText with administrator privileges
 end run`
-		cmd := exec.Command("osascript", "-e", asScript, tunnelBin)
+		cmd := exec.Command("osascript", "-e", asScript, tunnelBin, cfgDir)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			outStr := strings.TrimSpace(string(out))

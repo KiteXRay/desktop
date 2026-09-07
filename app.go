@@ -137,6 +137,7 @@ func NewApp() *App {
 	}
 
 	saveFile.Load(items)
+	app.tunnelMode = saveFile.GetTunnelMode()
 	devIP, dns := saveFile.GetTunnelSettings()
 	items.SetTunnelSettings(devIP, dns)
 	items.SetBridgeDialerFactory(func(defaultSocksAddr string) tproxy.Dialer {

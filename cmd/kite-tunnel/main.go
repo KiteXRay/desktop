@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -65,6 +66,7 @@ func (m *meteredTunnel) Write(p []byte) (int, error) {
 func main() {
 	checkFlag := flag.Bool("check", false, "check network privileges and exit (0 = ok, 1 = missing)")
 	cleanFlag := flag.Bool("clean", false, "clean stuck TUN devices and routes and exit")
+	fixPerms := flag.String("fix-perms", "", "recursively fix ownership of path to calling user UID/GID")
 	socks5 := flag.String("socks5", "127.0.0.1:10808", "local SOCKS5 proxy address")
 	tunName := flag.String("tun-name", "", "virtual TUN interface name (empty for OS default)")
 	tunAddr := flag.String("tun-addr", "192.18.0.1/24", "TUN interface IPv4 CIDR")
@@ -75,6 +77,26 @@ func main() {
 	gatewayIP := flag.String("gateway-ip", "", "default gateway IP for bypass route")
 	mode := flag.String("mode", "tunnel", "tunnel mode (tunnel, system, bridge, per_app)")
 	flag.Parse()
+
+	// Fix user permissions mode (runs as setuid root to repair root-owned config files)
+	if *fixPerms != "" {
+		uid := os.Getuid()
+		gid := os.Getgid()
+		if uid != 0 {
+			_ = filepath.Walk(*fixPerms, func(path string, info os.FileInfo, err error) error {
+				if err == nil {
+					_ = os.Chown(path, uid, gid)
+					if info.IsDir() {
+						_ = os.Chmod(path, 0755)
+					} else {
+						_ = os.Chmod(path, 0644)
+					}
+				}
+				return nil
+			})
+		}
+		os.Exit(0)
+	}
 
 	// Privilege check mode
 	if *checkFlag {

@@ -153,3 +153,37 @@ func TestSaveFile_BridgeGroupsAndRules(t *testing.T) {
 	assert.Equal(t, "group-2", loadedRules[1].GroupID)
 	assert.Equal(t, "game.exe", loadedRules[1].Pattern)
 }
+
+func TestSaveFile_FallbackAndMigration(t *testing.T) {
+	tmpDir := t.TempDir()
+	primaryPath := filepath.Join(tmpDir, "primary", "connections.json")
+	altPath := filepath.Join(tmpDir, "alt", "connections.json")
+
+	// Pre-populate alternate path with configuration
+	altContent := `{
+  "tunnelMode": "bridge",
+  "tunnelDeviceIp": "192.18.0.99",
+  "tunnelDns": "1.1.1.1",
+  "connections": []
+}`
+	require.NoError(t, os.MkdirAll(filepath.Dir(altPath), 0755))
+	require.NoError(t, os.WriteFile(altPath, []byte(altContent), 0644))
+
+	// Primary does not exist yet; Load should pick up altPath and sync to primaryPath
+	sf := NewSaveFileWithPath(primaryPath)
+	sf.altPath = altPath
+
+	list := connlist.New()
+	sf.Load(list)
+
+	assert.Equal(t, "bridge", sf.GetTunnelMode())
+	devIP, dns := sf.GetTunnelSettings()
+	assert.Equal(t, "192.18.0.99", devIP)
+	assert.Equal(t, "1.1.1.1", dns)
+
+	// Verify it was synced to primaryPath
+	primaryData, err := os.ReadFile(primaryPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(primaryData), "192.18.0.99")
+}
+

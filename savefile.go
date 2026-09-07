@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/KiteXRay/desktop/internal/bridge"
 	"github.com/KiteXRay/desktop/internal/connlist"
+	"github.com/KiteXRay/desktop/internal/osspecific/root"
 	"github.com/KiteXRay/desktop/internal/subscription"
 )
 
@@ -41,6 +43,7 @@ type AppConfigFile struct {
 
 type SaveFile struct {
 	filePath       string
+	altPath        string
 	tunnelMode     string
 	tunnelDeviceIP string
 	tunnelDNS      string
@@ -82,14 +85,57 @@ func NewSaveFileWithPath(path string) *SaveFile {
 }
 
 func NewSaveFile() *SaveFile {
+	home, _ := os.UserHomeDir()
 	configDir, err := os.UserConfigDir()
-	if err != nil {
-		home, _ := os.UserHomeDir()
+	if err != nil || configDir == "" {
 		configDir = filepath.Join(home, ".config")
 	}
 
-	appConfigDir := filepath.Join(configDir, configSubdir)
-	return NewSaveFileWithPath(filepath.Join(appConfigDir, configFileName))
+	primaryPath := filepath.Join(configDir, configSubdir, configFileName)
+	var altPath string
+	if home != "" {
+		if runtime.GOOS == "darwin" {
+			altPath = filepath.Join(home, ".config", configSubdir, configFileName)
+		} else {
+			altPath = filepath.Join(home, ".local", "share", configSubdir, configFileName)
+		}
+	}
+
+	primaryDir := filepath.Dir(primaryPath)
+	if !isDirWritable(primaryDir) {
+		fixPathOwnership(primaryDir)
+		if !isDirWritable(primaryDir) && altPath != "" {
+			slog.Warn("Primary config directory not writable, switching to alternate path", "primary", primaryPath, "alt", altPath)
+			sf := NewSaveFileWithPath(altPath)
+			sf.altPath = primaryPath
+			return sf
+		}
+	}
+
+	sf := NewSaveFileWithPath(primaryPath)
+	sf.altPath = altPath
+	return sf
+}
+
+func isDirWritable(dir string) bool {
+	_ = os.MkdirAll(dir, 0755)
+	testFile := filepath.Join(dir, ".kite_test_perm")
+	if err := os.WriteFile(testFile, []byte("1"), 0644); err != nil {
+		return false
+	}
+	_ = os.Remove(testFile)
+	return true
+}
+
+func fixPathOwnership(targetPath string) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		return
+	}
+	_ = os.Chmod(targetPath, 0755)
+	if tunnelBin, err := root.FindTunnelBinary(); err == nil && tunnelBin != "" {
+		cmd := exec.Command(tunnelBin, "--fix-perms", targetPath)
+		_ = cmd.Run()
+	}
 }
 
 func (s *SaveFile) GetTunnelMode() string {
@@ -233,50 +279,96 @@ func (s *SaveFile) Update(list *connlist.Collection) {
 		return
 	}
 
-	dir := filepath.Dir(s.filePath)
-	_ = os.MkdirAll(dir, 0755)
-	tmpFile, err := os.CreateTemp(dir, "connections-*.tmp")
-	if err != nil {
-		// Fallback to direct write if temp file creation fails
-		if err := os.WriteFile(s.filePath, b, 0644); err != nil {
-			slog.Error("failed to write connections file", "error", err, "path", s.filePath)
+	err1 := saveToDisk(s.filePath, b)
+	if err1 != nil {
+		slog.Warn("Failed to save to primary config path, attempting permission fix and retry", "path", s.filePath, "error", err1)
+		fixPathOwnership(filepath.Dir(s.filePath))
+		err1 = saveToDisk(s.filePath, b)
+	}
+
+	if s.altPath != "" && s.altPath != s.filePath {
+		err2 := saveToDisk(s.altPath, b)
+		if err2 != nil && err1 != nil {
+			slog.Error("Failed to save config to both primary and alternate paths", "primary", s.filePath, "alt", s.altPath, "err1", err1, "err2", err2)
 		}
-		return
-	}
-	tmpName := tmpFile.Name()
-
-	if _, err := tmpFile.Write(b); err != nil {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpName)
-		slog.Error("failed to write temp connections file", "error", err)
-		return
-	}
-	_ = tmpFile.Sync()
-	_ = tmpFile.Close()
-
-	if err := os.Rename(tmpName, s.filePath); err != nil {
-		_ = os.Remove(tmpName)
-		slog.Error("failed to replace connections file", "error", err, "path", s.filePath)
+	} else if err1 != nil {
+		slog.Error("Failed to save config to disk", "path", s.filePath, "error", err1)
 	}
 }
 
-// Load loads saved items into list, migrating from Fyne preferences or legacy array if needed.
-func (s *SaveFile) Load(list *connlist.Collection) {
-	// If config file does not exist, check for existing legacy goxray config or Fyne preferences
-	if _, err := os.Stat(s.filePath); os.IsNotExist(err) {
-		configDir := filepath.Dir(filepath.Dir(s.filePath))
-		legacyGoxrayPath := filepath.Join(configDir, "goxray", configFileName)
-		if legacyData, err := os.ReadFile(legacyGoxrayPath); err == nil && len(legacyData) > 0 {
-			_ = os.WriteFile(s.filePath, legacyData, 0644)
-		} else {
-			s.tryMigrateFromFyne(list)
-			return
+func saveToDisk(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		_ = os.Chmod(dir, 0755)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", dir, err)
 		}
 	}
 
-	data, err := os.ReadFile(s.filePath)
-	if err != nil {
-		slog.Error("failed to read connections file", "error", err)
+	// 1. Try atomic temp file write
+	tmpFile, err := os.CreateTemp(dir, "connections-*.tmp")
+	if err == nil {
+		tmpName := tmpFile.Name()
+		_, writeErr := tmpFile.Write(data)
+		_ = tmpFile.Sync()
+		_ = tmpFile.Close()
+
+		if writeErr == nil {
+			if renameErr := os.Rename(tmpName, path); renameErr == nil {
+				return nil
+			}
+			// Rename may fail on some systems if destination exists with different perms
+			_ = os.Chmod(path, 0644)
+			_ = os.Remove(path)
+			if renameErr2 := os.Rename(tmpName, path); renameErr2 == nil {
+				return nil
+			}
+		}
+		_ = os.Remove(tmpName)
+	}
+
+	// 2. Direct write fallback
+	_ = os.Chmod(path, 0644)
+	return os.WriteFile(path, data, 0644)
+}
+
+// Load loads saved items into list, searching primary, alternate, and legacy locations.
+func (s *SaveFile) Load(list *connlist.Collection) {
+	// Candidate search paths in priority order
+	var paths []string
+	if s.filePath != "" {
+		paths = append(paths, s.filePath)
+	}
+	if s.altPath != "" && s.altPath != s.filePath {
+		paths = append(paths, s.altPath)
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		paths = append(paths,
+			filepath.Join(home, "Library", "Application Support", configSubdir, configFileName),
+			filepath.Join(home, ".config", configSubdir, configFileName),
+			filepath.Join(home, "Library", "Application Support", "goxray", configFileName),
+			filepath.Join(home, ".config", "goxray", configFileName),
+		)
+	}
+
+	var data []byte
+	var loadedFrom string
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		if d, err := os.ReadFile(p); err == nil && len(d) > 0 {
+			var test json.RawMessage
+			if err := json.Unmarshal(d, &test); err == nil {
+				data = d
+				loadedFrom = p
+				break
+			}
+		}
+	}
+
+	if len(data) == 0 {
+		s.tryMigrateFromFyne(list)
 		return
 	}
 
@@ -317,13 +409,19 @@ func (s *SaveFile) Load(list *connlist.Collection) {
 				slog.Error("failed to load item", "error", err, "label", item.Label)
 			}
 		}
+
+		// If loaded from alternate or legacy path, sync to primary target
+		if loadedFrom != s.filePath {
+			slog.Info("Syncing loaded configuration to primary path", "from", loadedFrom, "to", s.filePath)
+			_ = saveToDisk(s.filePath, data)
+		}
 		return
 	}
 
 	// Fallback to legacy array format: []SavedState
 	loadedItems := make([]SavedState, 0)
 	if err := json.Unmarshal(data, &loadedItems); err != nil {
-		slog.Error("failed to unmarshal connections file", "error", err)
+		slog.Error("failed to unmarshal connections file", "error", err, "path", loadedFrom)
 		return
 	}
 
