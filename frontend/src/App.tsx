@@ -1105,7 +1105,8 @@ export function App() {
       {/* Network Privileges Required Modal */}
       <PrivilegeModal
         isOpen={isPrivilegeModalOpen}
-        command={privilegeInfo?.command || 'sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /opt/kite/kite'}
+        command={privilegeInfo?.command || ''}
+        os={privilegeInfo?.os}
         errorMessage={privilegeInfo?.error}
         onClose={() => setIsPrivilegeModalOpen(false)}
         onCheckAgain={handleCheckPrivilegesAgain}

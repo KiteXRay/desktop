@@ -627,11 +627,8 @@ func (a *App) CheckNetworkPrivileges() NetworkPrivilegesDTO {
 }
 
 func (a *App) GrantNetworkPrivileges() (bool, error) {
-	if runtime.GOOS == "linux" {
-		if err := root.GrantPrivilegesAndRestart(); err != nil {
-			return false, err
-		}
-		return true, nil
+	if err := root.GrantPrivilegesAndRestart(); err != nil {
+		return false, err
 	}
 	return true, nil
 }

@@ -9,8 +9,10 @@ package dock
 void SaveAppDelegate(void);
 void RestoreAppDelegate(void);
 void SafeStartSystray(void);
+void SetApplicationIconFromPNG(const void* bytes, int length);
 */
 import "C"
+import "unsafe"
 
 // SafeStartSystray runs systray nativeStart on Cocoa's main thread and preserves Wails's AppDelegate.
 func SafeStartSystray() {
@@ -32,5 +34,11 @@ func HideIconInDock() {
 	// Do not hide the app icon from the macOS Dock
 }
 
-func SetWindowIconFromPNG(pngBytes []byte) {}
+// SetWindowIconFromPNG sets the application icon in macOS Dock and Cmd-Tab app switcher.
+func SetWindowIconFromPNG(pngBytes []byte) {
+	if len(pngBytes) == 0 {
+		return
+	}
+	C.SetApplicationIconFromPNG(unsafe.Pointer(&pngBytes[0]), C.int(len(pngBytes)))
+}
 

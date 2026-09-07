@@ -318,6 +318,7 @@ func (tc *TrayController) updateMenu() {
 		systray.SetIcon(icon.LogoPassive)
 		systray.SetTooltip(AppTitleName)
 	}
+	systray.CreateMenu()
 }
 
 func (tc *TrayController) switchMode(targetMode string) {
@@ -336,22 +337,26 @@ func setupSystray(app *App) *TrayController {
 		systray.SetIcon(icon.LogoPassive)
 		dock.HideIconInDock()
 
-		// Left click on tray icon restores/focuses window
-		systray.SetOnClick(func(menu systray.IMenu) {
-			if app.ctx != nil {
-				wruntime.WindowShow(app.ctx)
-				wruntime.WindowUnminimise(app.ctx)
-			}
-		})
+		// Left click on tray icon restores/focuses window (Windows/Linux).
+		// On macOS, NSStatusItem displays its dropdown menu natively on click;
+		// registering SetOnClick/SetOnRClick intercepts clicks and suppresses menu display.
+		if runtime.GOOS != "darwin" {
+			systray.SetOnClick(func(menu systray.IMenu) {
+				if app.ctx != nil {
+					wruntime.WindowShow(app.ctx)
+					wruntime.WindowUnminimise(app.ctx)
+				}
+			})
 
-		// Right click displays context menu on Windows and macOS
-		systray.SetOnRClick(func(menu systray.IMenu) {
-			if menu != nil {
-				_ = menu.ShowMenu()
-			}
-		})
+			systray.SetOnRClick(func(menu systray.IMenu) {
+				if menu != nil {
+					_ = menu.ShowMenu()
+				}
+			})
+		}
 
 		tc.updateMenu()
+		systray.CreateMenu()
 	}
 
 	onExit := func() {
@@ -425,6 +430,7 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 2, G: 6, B: 23, A: 1}, // Slate-950
 		OnStartup: func(ctx context.Context) {
 			tc = setupSystray(app)
+			dock.SetWindowIconFromPNG(appIcon)
 			app.startup(ctx)
 			wruntime.Show(ctx)
 			wruntime.WindowShow(ctx)

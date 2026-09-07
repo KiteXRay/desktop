@@ -46,6 +46,7 @@ RESOURCES_DIR="${APP_PATH}/Contents/Resources"
 mkdir -p "${RESOURCES_DIR}"
 if [ -f "${ROOT_DIR}/build/darwin/iconfile.icns" ]; then
     cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${RESOURCES_DIR}/iconfile.icns"
+    cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${RESOURCES_DIR}/iconfile"
     cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${RESOURCES_DIR}/icon.icns"
     cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${RESOURCES_DIR}/appicon.icns"
 fi

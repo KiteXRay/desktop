@@ -18,7 +18,7 @@
         <key>CFBundleShortVersionString</key>
         <string>{{.Info.ProductVersion}}</string>
         <key>CFBundleIconFile</key>
-        <string>iconfile</string>
+        <string>iconfile.icns</string>
         <key>LSMinimumSystemVersion</key>
         <string>10.15.0</string>
         <key>NSHighResolutionCapable</key>

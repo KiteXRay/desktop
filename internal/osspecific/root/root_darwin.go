@@ -2,8 +2,12 @@ package root
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
 )
 
 func PromptRootAccess() {}
@@ -16,15 +20,82 @@ func HasNetworkPrivileges() (bool, error) {
 }
 
 func GetPrivilegeFixCommand() (string, string) {
-	exePath, _ := os.Executable()
-	return exePath, "Switch to 'Proxy' mode in Settings/Tray menu, or run with administrative privileges"
+	exePath, err := os.Executable()
+	if err == nil {
+		if realPath, err := filepath.EvalSymlinks(exePath); err == nil {
+			exePath = realPath
+		}
+	} else {
+		exePath = "/Applications/Kite.app/Contents/MacOS/Kite"
+	}
+	cmd := fmt.Sprintf("sudo %q", exePath)
+	return exePath, cmd
 }
 
 func GrantPrivilegesViaPkexec() error {
-	return nil
+	return GrantPrivilegesAndRestart()
 }
 
 func GrantPrivilegesAndRestart() error {
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("get executable path: %w", err)
+	}
+	if realPath, err := filepath.EvalSymlinks(exePath); err == nil {
+		exePath = realPath
+	}
+
+	pid := os.Getpid()
+	homeDir, _ := os.UserHomeDir()
+
+	// Wait for current process to exit, then exec binary with root privileges.
+	// Preserving HOME ensures user settings/subscriptions in ~/Library/Application Support remain intact.
+	var argsBuilder strings.Builder
+	for _, a := range os.Args[1:] {
+		argsBuilder.WriteString(fmt.Sprintf(" %q", a))
+	}
+
+	relaunchScript := fmt.Sprintf(
+		`pid=%d
+count=0
+while kill -0 "$pid" 2>/dev/null; do
+    sleep 0.05
+    count=$((count + 1))
+    if [ "$count" -ge 100 ]; then
+        kill -9 "$pid" 2>/dev/null || true
+        break
+    fi
+done
+sleep 0.1
+export HOME=%q
+exec %q%s`,
+		pid,
+		homeDir,
+		exePath,
+		argsBuilder.String(),
+	)
+
+	// AppleScript: authenticate with administrator privileges and launch relaunchScript detached as root
+	asScript := `on run argv
+    set scriptText to item 1 of argv
+    do shell script "/bin/sh -c " & quoted form of scriptText & " >/dev/null 2>&1 &" with administrator privileges
+end run`
+
+	cmd := exec.Command("osascript", "-e", asScript, relaunchScript)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		outStr := strings.TrimSpace(string(out))
+		if outStr == "" {
+			return fmt.Errorf("authentication cancelled or failed: %w", err)
+		}
+		return fmt.Errorf("elevation failed: %s (%w)", outStr, err)
+	}
+
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		os.Exit(0)
+	}()
+
 	return nil
 }
 
