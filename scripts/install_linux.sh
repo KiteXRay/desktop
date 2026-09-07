@@ -34,6 +34,20 @@ mkdir -p /opt/kite
 cp --remove-destination -f "$KITE_BIN" /opt/kite/kite
 chmod 755 /opt/kite/kite
 
+TUNNEL_BIN=""
+if [ -f "$SCRIPT_DIR/kite-tunnel" ]; then
+    TUNNEL_BIN="$SCRIPT_DIR/kite-tunnel"
+elif [ -f "$SCRIPT_DIR/build/bin/kite-tunnel" ]; then
+    TUNNEL_BIN="$SCRIPT_DIR/build/bin/kite-tunnel"
+elif [ -f "$ROOT_DIR/build/bin/kite-tunnel" ]; then
+    TUNNEL_BIN="$ROOT_DIR/build/bin/kite-tunnel"
+fi
+
+if [ -n "$TUNNEL_BIN" ]; then
+    cp --remove-destination -f "$TUNNEL_BIN" /opt/kite/kite-tunnel
+    chmod 755 /opt/kite/kite-tunnel
+fi
+
 if [ -f "$SCRIPT_DIR/grant_privileges.sh" ]; then
     cp "$SCRIPT_DIR/grant_privileges.sh" /opt/kite/grant_privileges.sh
     chmod 755 /opt/kite/grant_privileges.sh
@@ -41,9 +55,14 @@ fi
 
 # Assign network capabilities
 echo "==> Assigning network capabilities (CAP_NET_ADMIN, CAP_NET_RAW, CAP_NET_BIND_SERVICE)..."
+TARGET_CAP="/opt/kite/kite-tunnel"
+if [ ! -f "$TARGET_CAP" ]; then
+    TARGET_CAP="/opt/kite/kite"
+fi
+
 if command -v setcap >/dev/null 2>&1; then
-    setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /opt/kite/kite
-    echo "  ✓ Capabilities successfully assigned to /opt/kite/kite"
+    setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip "$TARGET_CAP"
+    echo "  ✓ Capabilities successfully assigned to $TARGET_CAP"
 else
     echo "  ⚠ Warning: 'setcap' tool not found. Install libcap2-bin (Debian/Ubuntu) or libcap (Arch/Fedora)."
 fi

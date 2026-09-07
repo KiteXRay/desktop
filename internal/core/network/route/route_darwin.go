@@ -38,21 +38,35 @@ func addDeleteRoutes(options Opts, delete bool) error {
 		case typeGW:
 			addresses, err = toGWAddresses(options.Gateway, cidr)
 			if err != nil {
-				return fmt.Errorf("addDeleteRoutes %s to %s: %v", options.Gateway, options.IfName, err)
+				return fmt.Errorf("addDeleteRoutes %s to gateway %s: %v", cidr, options.Gateway, err)
 			}
 		case typeUnknown:
 			return errors.New("unknown route type")
 		}
 
-		action := uint8(syscall.RTM_ADD)
-		if delete {
-			action = syscall.RTM_DELETE
+		flags := syscall.RTF_UP | syscall.RTF_STATIC
+		if options.opType() == typeGW {
+			flags |= syscall.RTF_GATEWAY
 		}
 
-		// TODO: refine flags
-		flags := syscall.RTF_UP | /*syscall.RTF_CLONING |*/ syscall.RTF_GATEWAY | syscall.RTF_STATIC
-		if err := processRouteCall(socket, addresses, action, flags); err != nil {
-			return fmt.Errorf("failed to addDeleteRoutes %s route: %v", cidr, err)
+		if delete {
+			if err := processRouteCall(socket, addresses, syscall.RTM_DELETE, flags); err != nil {
+				if !errors.Is(err, unix.ESRCH) {
+					return fmt.Errorf("failed to delete %s route: %v", cidr, err)
+				}
+			}
+		} else {
+			if err := processRouteCall(socket, addresses, syscall.RTM_ADD, flags); err != nil {
+				if errors.Is(err, unix.EEXIST) {
+					// Route already exists: delete and retry add to overwrite stale route
+					_ = processRouteCall(socket, addresses, syscall.RTM_DELETE, flags)
+					if err = processRouteCall(socket, addresses, syscall.RTM_ADD, flags); err != nil {
+						return fmt.Errorf("failed to replace %s route: %v", cidr, err)
+					}
+				} else {
+					return fmt.Errorf("failed to add %s route: %v", cidr, err)
+				}
+			}
 		}
 	}
 
@@ -75,7 +89,7 @@ func processRouteCall(socket int, addrs []route.Addr, action uint8, flags int) e
 
 	_, err = unix.Write(socket, bin[:])
 	if err != nil {
-		return fmt.Errorf("write to socket %d: %v", socket, err)
+		return fmt.Errorf("write to socket %d: %w", socket, err)
 	}
 
 	return nil
@@ -87,16 +101,16 @@ func toIfaceAddresses(ifcName string, dest *Addr) ([]route.Addr, error) {
 		return nil, fmt.Errorf("destination is nil")
 	case ifcName == "":
 		return nil, fmt.Errorf("ifcName is empty")
-	default:
-		_, err := net.InterfaceByName(ifcName)
-		if err != nil {
-			return nil, fmt.Errorf("interface %s not found: %v", ifcName, err)
-		}
+	}
+
+	ifc, err := net.InterfaceByName(ifcName)
+	if err != nil {
+		return nil, fmt.Errorf("interface %s not found: %v", ifcName, err)
 	}
 
 	addresses := []route.Addr{
 		inet4Addr(dest.IP),
-		&route.LinkAddr{Name: ifcName},
+		&route.LinkAddr{Index: ifc.Index, Name: ifcName},
 	}
 	if dest.Mask != nil {
 		addresses = append(addresses, inet4Addr(net.IP(dest.Mask)))

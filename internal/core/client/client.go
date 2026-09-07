@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,11 +12,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/goxray/core/network/route"
@@ -91,6 +95,7 @@ type Config struct {
 	HTTPPort         int
 	TunnelDeviceIP      string
 	TunnelDNS           string
+	TunnelBinaryPath    string
 	BridgeDialerFactory func(defaultSocksAddr string) tproxy.Dialer
 }
 
@@ -105,9 +110,11 @@ type Client struct {
 	xCfg   *xrayproto.GeneralConfig
 	xSrvIP *net.IPAddr
 
-	tunnel io.ReadWriteCloser
-	pipe   *pipe2socks.Pipe
-	routes *route.Route
+	tunnel      io.ReadWriteCloser
+	tunnelCmd   *exec.Cmd
+	tunnelStdin io.WriteCloser
+	pipe        *pipe2socks.Pipe
+	routes      *route.Route
 
 	tunnelStopped chan error
 	stopTunnel    func()
@@ -294,7 +301,199 @@ func (c *Client) ConnectWithMode(link string, mode TunnelMode) error {
 	return nil
 }
 
+func findTunnelBinary() string {
+	if p := os.Getenv("KITE_TUNNEL_PATH"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		p := filepath.Join(dir, "kite-tunnel")
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+		if runtime.GOOS == "darwin" {
+			pHelper := filepath.Join(dir, "..", "Helpers", "kite-tunnel")
+			if _, err := os.Stat(pHelper); err == nil {
+				return filepath.Clean(pHelper)
+			}
+		}
+	}
+	defaultPath := "/opt/kite/kite-tunnel"
+	if runtime.GOOS == "darwin" {
+		defaultPath = "/Applications/Kite.app/Contents/MacOS/kite-tunnel"
+	}
+	if _, err := os.Stat(defaultPath); err == nil {
+		return defaultPath
+	}
+	for _, rel := range []string{"build/bin/kite-tunnel", "./kite-tunnel", "cmd/kite-tunnel/kite-tunnel"} {
+		if _, err := os.Stat(rel); err == nil {
+			if abs, err := filepath.Abs(rel); err == nil {
+				return abs
+			}
+			return rel
+		}
+	}
+	if p, err := exec.LookPath("kite-tunnel"); err == nil {
+		return p
+	}
+	return ""
+}
+
 func (c *Client) setupSystemRouting(ctx context.Context) error {
+	if runtime.GOOS != "windows" {
+		tunnelBin := c.cfg.TunnelBinaryPath
+		if tunnelBin == "" {
+			tunnelBin = findTunnelBinary()
+		}
+		if tunnelBin != "" {
+			return c.setupSystemRoutingWithHelper(ctx, tunnelBin)
+		}
+	}
+
+	return c.setupSystemRoutingInProcess(ctx)
+}
+
+func (c *Client) setupSystemRoutingWithHelper(ctx context.Context, tunnelBin string) error {
+	args := []string{
+		"--socks5", c.cfg.InboundProxy.String(),
+		"--mode", string(c.cfg.Mode),
+	}
+	if c.cfg.TunnelDNS != "" {
+		args = append(args, "--tun-dns", c.cfg.TunnelDNS)
+	}
+	if c.cfg.TUNAddress != nil {
+		args = append(args, "--tun-addr", c.cfg.TUNAddress.String())
+		if len(c.cfg.TUNAddress.IP) > 0 {
+			args = append(args, "--tun-gw", c.cfg.TUNAddress.IP.String())
+		}
+	}
+	if len(c.cfg.RoutesToTUN) > 0 {
+		var rStrs []string
+		for _, r := range c.cfg.RoutesToTUN {
+			rStrs = append(rStrs, r.String())
+		}
+		args = append(args, "--routes", strings.Join(rStrs, ","))
+	}
+	if c.xSrvIP != nil {
+		args = append(args, "--bypass-ip", c.xSrvIP.String())
+	}
+	if c.cfg.GatewayIP != nil {
+		args = append(args, "--gateway-ip", c.cfg.GatewayIP.String())
+	}
+
+	c.cfg.Logger.Info("Spawning kite-tunnel helper", "bin", tunnelBin, "args", args)
+	cmd := exec.Command(tunnelBin, args...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("open kite-tunnel stdin: %w", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		_ = stdin.Close()
+		return fmt.Errorf("open kite-tunnel stdout: %w", err)
+	}
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
+		return fmt.Errorf("start kite-tunnel helper: %w", err)
+	}
+
+	c.tunnelCmd = cmd
+	c.tunnelStdin = stdin
+
+	readyChan := make(chan error, 1)
+	scanner := bufio.NewScanner(stdout)
+
+	go func() {
+		var isReady bool
+		for scanner.Scan() {
+			line := scanner.Bytes()
+			var ev struct {
+				Event     string `json:"event"`
+				Interface string `json:"interface"`
+				BytesIn   int64  `json:"bytes_in"`
+				BytesOut  int64  `json:"bytes_out"`
+				Message   string `json:"message"`
+			}
+			if err := json.Unmarshal(line, &ev); err != nil {
+				continue
+			}
+			switch ev.Event {
+			case "ready":
+				c.ifName = ev.Interface
+				if !isReady {
+					isReady = true
+					readyChan <- nil
+				}
+			case "stats":
+				c.bytesRead.Store(ev.BytesIn)
+				c.bytesWritten.Store(ev.BytesOut)
+			case "error":
+				if !isReady {
+					isReady = true
+					readyChan <- errors.New(ev.Message)
+				}
+			}
+		}
+
+		cmdErr := cmd.Wait()
+		if !isReady {
+			if cmdErr != nil {
+				readyChan <- fmt.Errorf("kite-tunnel exited prematurely: %w", cmdErr)
+			} else {
+				readyChan <- errors.New("kite-tunnel closed unexpectedly")
+			}
+		}
+		select {
+		case c.tunnelStopped <- cmdErr:
+		default:
+		}
+	}()
+
+	select {
+	case err := <-readyChan:
+		if err != nil {
+			_ = c.cleanupTunnelHelper()
+			return fmt.Errorf("kite-tunnel startup failed: %w", err)
+		}
+	case <-time.After(10 * time.Second):
+		_ = c.cleanupTunnelHelper()
+		return errors.New("timed out waiting for kite-tunnel ready event")
+	case <-ctx.Done():
+		_ = c.cleanupTunnelHelper()
+		return ctx.Err()
+	}
+
+	return nil
+}
+
+func (c *Client) cleanupTunnelHelper() error {
+	var errs []error
+	if c.tunnelStdin != nil {
+		if err := c.tunnelStdin.Close(); err != nil {
+			errs = append(errs, err)
+		}
+		c.tunnelStdin = nil
+	}
+	if c.tunnelCmd != nil && c.tunnelCmd.Process != nil {
+		_ = c.tunnelCmd.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-c.tunnelStopped:
+		case <-time.After(300 * time.Millisecond):
+			_ = c.tunnelCmd.Process.Kill()
+		}
+		c.tunnelCmd = nil
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
+func (c *Client) setupSystemRoutingInProcess(ctx context.Context) error {
 	var err error
 	c.tunnel, err = c.setupTunnel()
 	if err != nil {
@@ -428,17 +627,11 @@ func (c *Client) Disconnect(ctx context.Context) error {
 
 	var errs []error
 
-	if c.httpLn != nil {
-		_ = c.httpLn.Close()
-		c.httpLn = nil
-	}
-	c.proxyWg.Wait()
-
-	if c.xInst != nil {
-		if err := c.xInst.Close(); err != nil {
+	// 1. Remove tunnel & routes FIRST so system network is immediately restored
+	if c.tunnelStdin != nil || c.tunnelCmd != nil {
+		if err := c.cleanupTunnelHelper(); err != nil {
 			errs = append(errs, err)
 		}
-		c.xInst = nil
 	}
 
 	if c.tunnel != nil {
@@ -451,7 +644,7 @@ func (c *Client) Disconnect(ctx context.Context) error {
 		}
 		_ = c.routes.Delete(route.Opts{IfName: c.tunIfName(), Routes: c.cfg.RoutesToTUN})
 
-		ctxTimeout, cancel := context.WithTimeout(ctx, 2*time.Second)
+		ctxTimeout, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		defer cancel()
 		select {
 		case tunErr := <-c.tunnelStopped:
@@ -460,6 +653,20 @@ func (c *Client) Disconnect(ctx context.Context) error {
 			}
 		case <-ctxTimeout.Done():
 		}
+	}
+
+	// 2. Shut down proxy forwarders & XRay core AFTER tunnel routes are removed
+	if c.httpLn != nil {
+		_ = c.httpLn.Close()
+		c.httpLn = nil
+	}
+	c.proxyWg.Wait()
+
+	if c.xInst != nil {
+		if err := c.xInst.Close(); err != nil {
+			errs = append(errs, err)
+		}
+		c.xInst = nil
 	}
 
 	c.cfg.Logger.Info("Client disconnected successfully")

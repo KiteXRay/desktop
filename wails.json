@@ -7,14 +7,14 @@
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
   "author": {
-    "name": "Kite",
-    "email": "dev@kitevpn.com"
+    "name": "Evgeny Morozov",
+    "email": "underhardcore@yandex.com"
   },
   "info": {
     "companyName": "Kite",
     "productName": "Kite",
     "productVersion": "1.2.0",
-    "copyright": "Copyright 2024 Kite",
-    "comments": "Fast & Minimal Desktop VPN"
+    "copyright": "Copyright 2026 Kite",
+    "comments": "Fast & Minimal Desktop VPN Client"
   }
 }

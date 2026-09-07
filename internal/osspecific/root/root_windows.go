@@ -40,6 +40,10 @@ func PromptRootAccess() {
 	}
 }
 
+func CheckProcessCapabilities() (bool, error) {
+	return HasNetworkPrivileges()
+}
+
 func HasNetworkPrivileges() (bool, error) {
 	var token windows.Token
 	err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY, &token)

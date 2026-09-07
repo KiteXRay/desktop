@@ -8,6 +8,10 @@ func PromptRootAccess() {
 	slog.Warn("PromptRootAccess not implemented on this platform, run the program as root manually")
 }
 
+func CheckProcessCapabilities() (bool, error) {
+	return true, nil
+}
+
 func HasNetworkPrivileges() (bool, error) {
 	return true, nil
 }

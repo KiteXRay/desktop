@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 set -e
 
-EXE="${1:-/opt/kite/kite}"
+EXE="${1:-/opt/kite/kite-tunnel}"
+if [ ! -f "$EXE" ] && [ -f "/opt/kite/kite" ]; then
+    EXE="/opt/kite/kite"
+fi
 PID="$2"
 
 echo "==> Preparing to grant network capabilities to: $EXE"
 
-# 1. If caller PID is provided, wait for it to exit
-if [ -n "$PID" ]; then
+# 1. If caller PID is provided and targeting the main executable, wait for it to exit
+if [ -n "$PID" ] && [ "$(basename "$EXE")" != "kite-tunnel" ]; then
     echo "Waiting for process $PID to exit..."
     for i in {1..50}; do
         if ! kill -0 "$PID" 2>/dev/null; then
@@ -31,8 +34,8 @@ fi
 
 echo "✓ Successfully applied network capabilities to $EXE"
 
-# 4. Relaunch
-if [ "${3:-relaunch}" = "relaunch" ]; then
+# 3. Relaunch only if requested and targeting the main app
+if [ "${3:-auto}" = "relaunch" ] || { [ "${3:-auto}" = "auto" ] && [ "$(basename "$EXE")" != "kite-tunnel" ]; }; then
     echo "Relaunching Kite..."
     nohup "$EXE" >/dev/null 2>&1 &
 fi

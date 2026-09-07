@@ -12,14 +12,44 @@ import (
 
 func PromptRootAccess() {}
 
-func HasNetworkPrivileges() (bool, error) {
+func CheckProcessCapabilities() (bool, error) {
 	if os.Geteuid() == 0 {
 		return true, nil
 	}
 	return false, errors.New("administrative privileges required for TUN mode on macOS")
 }
 
+func HasNetworkPrivileges() (bool, error) {
+	if os.Geteuid() == 0 {
+		return true, nil
+	}
+
+	exePath, err := os.Executable()
+	if err == nil {
+		if realPath, err := filepath.EvalSymlinks(exePath); err == nil {
+			exePath = realPath
+		}
+	}
+	if filepath.Base(exePath) == "kite-tunnel" {
+		return CheckProcessCapabilities()
+	}
+
+	if tunnelBin, err := FindTunnelBinary(); err == nil && tunnelBin != exePath {
+		cmd := exec.Command(tunnelBin, "--check")
+		if err := cmd.Run(); err == nil {
+			return true, nil
+		}
+	}
+
+	return false, errors.New("administrative privileges required for TUN mode on macOS")
+}
+
 func GetPrivilegeFixCommand() (string, string) {
+	if tunnelBin, err := FindTunnelBinary(); err == nil && tunnelBin != "" {
+		cmd := fmt.Sprintf("sudo chown root:wheel %q && sudo chmod 4755 %q", tunnelBin, tunnelBin)
+		return tunnelBin, cmd
+	}
+
 	exePath, err := os.Executable()
 	if err == nil {
 		if realPath, err := filepath.EvalSymlinks(exePath); err == nil {
@@ -37,6 +67,27 @@ func GrantPrivilegesViaPkexec() error {
 }
 
 func GrantPrivilegesAndRestart() error {
+	if tunnelBin, err := FindTunnelBinary(); err == nil && tunnelBin != "" {
+		asScript := `on run argv
+    set targetBin to item 1 of argv
+    set scriptText to "chown root:wheel " & quoted form of targetBin & " && chmod 4755 " & quoted form of targetBin
+    do shell script scriptText with administrator privileges
+end run`
+		cmd := exec.Command("osascript", "-e", asScript, tunnelBin)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			outStr := strings.TrimSpace(string(out))
+			if outStr == "" {
+				return fmt.Errorf("authentication cancelled or failed: %w", err)
+			}
+			return fmt.Errorf("elevation failed: %s (%w)", outStr, err)
+		}
+
+		if has, _ := HasNetworkPrivileges(); has {
+			return nil
+		}
+	}
+
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("get executable path: %w", err)

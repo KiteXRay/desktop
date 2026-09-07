@@ -2,5 +2,7 @@
 set -e
 
 wails build -tags webkit2_41
-sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip build/bin/kite
+if [ ! -f build/bin/kite-tunnel ] || [ cmd/kite-tunnel/main.go -nt build/bin/kite-tunnel ]; then
+    go build -o build/bin/kite-tunnel ./cmd/kite-tunnel
+fi
 exec ./build/bin/kite

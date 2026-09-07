@@ -44,7 +44,7 @@ func addDeleteRoute(ifname string, gw *net.IP, dst *Addr, delete bool) error {
 		return nil
 	}
 
-	if err := netlink.RouteAdd(&route); err != nil {
+	if err := netlink.RouteReplace(&route); err != nil {
 		return fmt.Errorf("failed to update %s route to (%q)-%s: %s", dst, route.LinkIndex, gw, err)
 	}
 	return nil

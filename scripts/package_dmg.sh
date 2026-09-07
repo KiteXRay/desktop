@@ -53,6 +53,17 @@ fi
 
 # Ensure executable has execute permissions and proper bundle permissions
 chmod -R 755 "${APP_PATH}"
+
+TUNNEL_BIN="${BIN_DIR}/kite-tunnel"
+if [ ! -f "${TUNNEL_BIN}" ]; then
+    echo "==> Compiling kite-tunnel helper for macOS..."
+    go build -ldflags "-s -w" -o "${TUNNEL_BIN}" "${ROOT_DIR}/cmd/kite-tunnel"
+fi
+if [ -f "${TUNNEL_BIN}" ]; then
+    cp "${TUNNEL_BIN}" "${APP_PATH}/Contents/MacOS/kite-tunnel"
+    chmod 755 "${APP_PATH}/Contents/MacOS/kite-tunnel"
+fi
+
 if [ -d "${APP_PATH}/Contents/MacOS" ]; then
     chmod +x "${APP_PATH}/Contents/MacOS"/* || true
 fi

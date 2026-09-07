@@ -82,7 +82,7 @@ export const PrivilegeModal: React.FC<PrivilegeModalProps> = ({
               <p className="text-xs text-slate-400 mt-0.5">
                 {os === 'darwin'
                   ? 'Administrator privileges required for TUN mode on macOS'
-                  : 'Linux capabilities missing on Kite executable'}
+                  : 'Linux capabilities missing on Kite tunnel helper'}
               </p>
             </div>
           </div>
@@ -97,11 +97,11 @@ export const PrivilegeModal: React.FC<PrivilegeModalProps> = ({
         {/* Explanation */}
         {os === 'darwin' ? (
           <p className="text-xs text-slate-300 leading-relaxed">
-            Kite requires administrator privileges to create virtual TUN network interfaces (<code className="text-indigo-300">utun</code>) and configure routing tables for system-wide VPN tunnel mode.
+            Kite requires administrator privileges for its network tunnel helper to create virtual TUN interfaces (<code className="text-indigo-300">utun</code>) and configure routing tables for system-wide VPN tunnel mode.
           </p>
         ) : (
           <p className="text-xs text-slate-300 leading-relaxed">
-            Kite requires network capabilities (<code className="bg-slate-800 px-1 py-0.5 rounded text-amber-300 font-mono text-[11px]">CAP_NET_ADMIN</code>, <code className="bg-slate-800 px-1 py-0.5 rounded text-amber-300 font-mono text-[11px]">CAP_NET_RAW</code>, <code className="bg-slate-800 px-1 py-0.5 rounded text-amber-300 font-mono text-[11px]">CAP_NET_BIND_SERVICE</code>) to create virtual TUN adapters (<code className="text-indigo-300">kite0</code>) and configure routing tables without needing to run the whole app as root.
+            Kite requires network capabilities (<code className="bg-slate-800 px-1 py-0.5 rounded text-amber-300 font-mono text-[11px]">CAP_NET_ADMIN</code>, <code className="bg-slate-800 px-1 py-0.5 rounded text-amber-300 font-mono text-[11px]">CAP_NET_RAW</code>, <code className="bg-slate-800 px-1 py-0.5 rounded text-amber-300 font-mono text-[11px]">CAP_NET_BIND_SERVICE</code>) on its tunnel helper to create virtual TUN adapters (<code className="text-indigo-300">kite0</code>) and configure routing tables without running the GUI app as root.
           </p>
         )}
 
@@ -138,10 +138,10 @@ export const PrivilegeModal: React.FC<PrivilegeModalProps> = ({
           </div>
 
           <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl font-mono text-xs text-amber-200/90 break-all select-all leading-relaxed">
-            {command || (os === 'darwin' ? 'sudo /Applications/Kite.app/Contents/MacOS/Kite' : 'sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /opt/kite/kite')}
+            {command || (os === 'darwin' ? 'sudo chown root:wheel /Applications/Kite.app/Contents/MacOS/kite-tunnel && sudo chmod 4755 /Applications/Kite.app/Contents/MacOS/kite-tunnel' : 'sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /opt/kite/kite-tunnel')}
           </div>
           <p className="text-[11px] text-slate-400 italic">
-            Note: After running the command, click &apos;Check Again&apos; or restart the application.
+            Note: After running the command, click &apos;Check Again&apos;.
           </p>
         </div>
 
@@ -180,12 +180,12 @@ export const PrivilegeModal: React.FC<PrivilegeModalProps> = ({
             {isGranting ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Restarting Kite with sudo...</span>
+                <span>Granting privileges...</span>
               </>
             ) : (
               <>
                 <KeyRound className="w-3.5 h-3.5" />
-                <span>Grant & Restart App</span>
+                <span>Grant Privileges</span>
               </>
             )}
           </button>

@@ -30,6 +30,15 @@ mkdir -p "$BUILD_DIR/usr/share/pixmaps"
 # 1. Copy binary & icon & grant script to /opt/kite
 cp "$KITE_BIN" "$BUILD_DIR/opt/kite/kite"
 chmod 755 "$BUILD_DIR/opt/kite/kite"
+
+TUNNEL_BIN="$ROOT_DIR/build/bin/kite-tunnel"
+if [ ! -f "$TUNNEL_BIN" ]; then
+    echo "Building kite-tunnel..."
+    go build -ldflags "-s -w" -o "$TUNNEL_BIN" "$ROOT_DIR/cmd/kite-tunnel"
+fi
+cp "$TUNNEL_BIN" "$BUILD_DIR/opt/kite/kite-tunnel"
+chmod 755 "$BUILD_DIR/opt/kite/kite-tunnel"
+
 cp "$ROOT_DIR/scripts/grant_privileges.sh" "$BUILD_DIR/opt/kite/grant_privileges.sh"
 chmod 755 "$BUILD_DIR/opt/kite/grant_privileges.sh"
 cp "$ROOT_DIR/build/appicon.png" "$BUILD_DIR/opt/kite/kite.png"
@@ -77,7 +86,7 @@ cat << 'POSTINST_EOF' > "$BUILD_DIR/DEBIAN/postinst"
 set -e
 
 if command -v setcap >/dev/null 2>&1; then
-    setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /opt/kite/kite 2>/dev/null || true
+    setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /opt/kite/kite-tunnel 2>/dev/null || true
 fi
 
 if command -v update-desktop-database >/dev/null 2>&1; then

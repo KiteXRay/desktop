@@ -41,6 +41,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
           wails build -tags webkit2_41 -skipbindings -ldflags "-X main.appVersion=${VERSION}"
+          go build -ldflags "-s -w" -o build/bin/kite-tunnel ./cmd/kite-tunnel
           if [ -f build/bin/Kite ] && [ ! -f build/bin/kite ]; then
             cp build/bin/Kite build/bin/kite
           fi
@@ -49,12 +50,13 @@ jobs:
         run: |
           mkdir -p release-pkg
           cp build/bin/kite release-pkg/
+          cp build/bin/kite-tunnel release-pkg/
           cp scripts/install_linux.sh release-pkg/install.sh
           cp scripts/uninstall_linux.sh release-pkg/uninstall.sh
           cp scripts/grant_privileges.sh release-pkg/grant_privileges.sh
           cp build/appicon.png release-pkg/kite.png
           cp README.md LICENSE release-pkg/
-          chmod +x release-pkg/install.sh release-pkg/uninstall.sh release-pkg/grant_privileges.sh release-pkg/kite
+          chmod +x release-pkg/install.sh release-pkg/uninstall.sh release-pkg/grant_privileges.sh release-pkg/kite release-pkg/kite-tunnel
           tar -czvf kite-linux-amd64.tar.gz -C release-pkg .
 
       - name: Build Debian Package (.deb)
@@ -191,6 +193,10 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
           wails build -platform darwin/universal -skipbindings -ldflags "-X main.appVersion=${VERSION}"
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w" -o build/bin/kite-tunnel-amd64 ./cmd/kite-tunnel
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o build/bin/kite-tunnel-arm64 ./cmd/kite-tunnel
+          lipo -create -output build/bin/kite-tunnel build/bin/kite-tunnel-amd64 build/bin/kite-tunnel-arm64
+          rm -f build/bin/kite-tunnel-amd64 build/bin/kite-tunnel-arm64
 
       - name: Install create-dmg
         run: |

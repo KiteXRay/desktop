@@ -19,7 +19,7 @@ func (i *Interface) up(local *net.IPNet, gw net.IP) error {
 		IPNet: local,
 		Peer:  &net.IPNet{IP: gw, Mask: []byte{0, 0, 0, 0}},
 	}
-	err = netlink.AddrAdd(link, ipv4Addr)
+	err = netlink.AddrReplace(link, ipv4Addr)
 	if err != nil {
 		return fmt.Errorf("failed to set peer address on %s interface: %s", i.Name(), err)
 	}
