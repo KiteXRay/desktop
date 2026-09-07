@@ -445,6 +445,11 @@ func (a *App) connectInternal(id string) error {
 		})
 	}
 
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		a.PingConnection(id)
+	}()
+
 	return nil
 }
 
@@ -720,6 +725,9 @@ func (a *App) PingConnection(id string) int64 {
 	if item == nil {
 		return -1
 	}
+	if a.ctx != nil {
+		wruntime.EventsEmit(a.ctx, "ping:start", id)
+	}
 	res := pingRoutedConnection(item.Link(), 2500*time.Millisecond)
 	if a.ctx != nil {
 		wruntime.EventsEmit(a.ctx, "ping:result", PingResultDTO{
@@ -744,6 +752,9 @@ func (a *App) PingAll() map[string]int64 {
 		id := itm.ID()
 		link := itm.Link()
 
+		if a.ctx != nil {
+			wruntime.EventsEmit(a.ctx, "ping:start", id)
+		}
 		latency := pingRoutedConnection(link, 2500*time.Millisecond)
 		results[id] = latency
 
@@ -1080,6 +1091,10 @@ func (a *App) SetTunnelMode(mode string) error {
 					"mode":   a.GetTunnelMode(),
 				})
 			}
+			go func() {
+				time.Sleep(150 * time.Millisecond)
+				a.PingConnection(activeID)
+			}()
 		}
 	} else {
 		_ = proxy.SetSystemProxy(false, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)

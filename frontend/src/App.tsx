@@ -254,6 +254,16 @@ export function App() {
       setPingingIds(prev => ({ ...prev, [res.id]: false }));
     });
 
+    const unsubPingStart = api.onPingStart(id => {
+      setPingingIds(prev => ({ ...prev, [id]: true }));
+    });
+
+    const unsubStatus = api.onConnectionStatus(event => {
+      if (event.status === 'connected' && event.id) {
+        setPingingIds(prev => ({ ...prev, [event.id]: true }));
+      }
+    });
+
     const timer = setTimeout(async () => {
       try {
         const info = await api.checkForUpdate();
@@ -298,6 +308,8 @@ export function App() {
       unsubPrivs();
       unsubProgress();
       unsubPing();
+      unsubPingStart();
+      unsubStatus();
       unsubMode();
       clearTimeout(timer);
     };

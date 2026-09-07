@@ -22,3 +22,9 @@ func TestPingRoutedConnection_UnreachableServer(t *testing.T) {
 	latency := pingRoutedConnection(link, 200*time.Millisecond)
 	assert.Equal(t, int64(-1), latency)
 }
+
+func TestApp_PingConnection_NotFound(t *testing.T) {
+	app := NewApp()
+	latency := app.PingConnection("non-existent-id")
+	assert.Equal(t, int64(-1), latency)
+}

@@ -443,5 +443,12 @@ export const api = {
       return window.runtime.EventsOn('ping:result', callback);
     }
     return () => {};
+  },
+
+  onPingStart(callback: (id: string) => void): () => void {
+    if (window.runtime?.EventsOn) {
+      return window.runtime.EventsOn('ping:start', callback);
+    }
+    return () => {};
   }
 };
