@@ -54,3 +54,51 @@ func TestGetRunningProcesses(t *testing.T) {
 		t.Errorf("expected at least 1 running process")
 	}
 }
+
+func TestCheckRunningProcesses_DisabledGroup(t *testing.T) {
+	procs, err := GetRunningProcesses()
+	if err != nil || len(procs) == 0 {
+		t.Skip("skipping process check test: no processes returned")
+	}
+
+	firstProc := procs[0]
+	rules := []BridgeRule{
+		{ID: "r1", GroupID: "g1", Pattern: firstProc, Enabled: true},
+		{ID: "r2", GroupID: "g2", Pattern: firstProc, Enabled: true},
+	}
+	groups := []BridgeGroup{
+		{ID: "g1", Name: "Active Group", Enabled: true},
+		{ID: "g2", Name: "Disabled Group", Enabled: false},
+	}
+
+	counts := CheckRunningProcesses(rules, groups)
+	if counts["r1"] == 0 {
+		t.Errorf("expected r1 to have matched running process, got 0")
+	}
+	if counts["r2"] != 0 {
+		t.Errorf("expected r2 in disabled group to have count 0, got %d", counts["r2"])
+	}
+}
+
+func TestBridgeDialer_DisabledGroup(t *testing.T) {
+	rules := []BridgeRule{
+		{ID: "r1", GroupID: "g1", Pattern: "test.exe", Enabled: true, ProxyTarget: "socks5://127.0.0.1:10808"},
+	}
+	groups := []BridgeGroup{
+		{ID: "g1", Name: "Test Group", Enabled: false},
+	}
+
+	dialer := NewBridgeDialer("", func() []BridgeRule { return rules }, nil, func() []BridgeGroup { return groups })
+	matched := dialer.matchRule("test.exe")
+	if matched != nil {
+		t.Errorf("expected nil rule match because group is disabled, got %v", matched)
+	}
+
+	// Enable group and test again
+	groups[0].Enabled = true
+	matched = dialer.matchRule("test.exe")
+	if matched == nil {
+		t.Errorf("expected rule match after group enabled, got nil")
+	}
+}
+

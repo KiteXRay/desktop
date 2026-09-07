@@ -1,4 +1,4 @@
-import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO, PingResultDTO, Subscription, BridgeRule, AddResultDTO, TunnelSettingsDTO } from '../types';
+import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO, PingResultDTO, Subscription, BridgeGroup, BridgeRule, AddResultDTO, TunnelSettingsDTO } from '../types';
 
 declare global {
   interface Window {
@@ -30,6 +30,8 @@ declare global {
           UpdateSubscription(id: string): Promise<void>;
           DeleteSubscription(id: string): Promise<void>;
           UpdateAllSubscriptions(): Promise<void>;
+          GetBridgeGroups(): Promise<import('../types').BridgeGroup[]>;
+          SaveBridgeGroups(groups: import('../types').BridgeGroup[]): Promise<void>;
           GetBridgeRules(): Promise<import('../types').BridgeRule[]>;
           SaveBridgeRules(rules: import('../types').BridgeRule[]): Promise<void>;
           CheckRunningBridgeProcesses(): Promise<Record<string, number>>;
@@ -254,6 +256,17 @@ export const api = {
     if (app?.UpdateAllSubscriptions) return app.UpdateAllSubscriptions();
   },
 
+  async getBridgeGroups(): Promise<BridgeGroup[]> {
+    const app = getApp();
+    if (app?.GetBridgeGroups) return app.GetBridgeGroups();
+    return [];
+  },
+
+  async saveBridgeGroups(groups: BridgeGroup[]): Promise<void> {
+    const app = getApp();
+    if (app?.SaveBridgeGroups) return app.SaveBridgeGroups(groups);
+  },
+
   async getBridgeRules(): Promise<BridgeRule[]> {
     const app = getApp();
     if (app?.GetBridgeRules) return app.GetBridgeRules();
@@ -365,6 +378,20 @@ export const api = {
   onProxyStatusChanged(callback: (active: boolean) => void): () => void {
     if (window.runtime?.EventsOn) {
       return window.runtime.EventsOn('proxy:status', callback);
+    }
+    return () => {};
+  },
+
+  onBridgeGroupsChanged(callback: (groups: BridgeGroup[]) => void): () => void {
+    if (window.runtime?.EventsOn) {
+      return window.runtime.EventsOn('bridge:groups_changed', callback);
+    }
+    return () => {};
+  },
+
+  onBridgeRulesChanged(callback: (rules: BridgeRule[]) => void): () => void {
+    if (window.runtime?.EventsOn) {
+      return window.runtime.EventsOn('bridge:rules_changed', callback);
     }
     return () => {};
   },

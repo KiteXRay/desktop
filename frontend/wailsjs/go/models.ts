@@ -23,8 +23,25 @@ export namespace appscan {
 
 export namespace bridge {
 	
+	export class BridgeGroup {
+	    id: string;
+	    name: string;
+	    enabled: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new BridgeGroup(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.enabled = source["enabled"];
+	    }
+	}
 	export class BridgeRule {
 	    id: string;
+	    groupId?: string;
 	    pattern: string;
 	    proxyTarget: string;
 	    proxyType: string;
@@ -38,6 +55,7 @@ export namespace bridge {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.groupId = source["groupId"];
 	        this.pattern = source["pattern"];
 	        this.proxyTarget = source["proxyTarget"];
 	        this.proxyType = source["proxyType"];

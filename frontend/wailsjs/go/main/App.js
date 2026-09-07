@@ -58,6 +58,10 @@ export function GetAppInfo() {
   return window['go']['main']['App']['GetAppInfo']();
 }
 
+export function GetBridgeGroups() {
+  return window['go']['main']['App']['GetBridgeGroups']();
+}
+
 export function GetBridgeRules() {
   return window['go']['main']['App']['GetBridgeRules']();
 }
@@ -144,6 +148,10 @@ export function ReorderConnections(arg1, arg2) {
 
 export function ResetTraffic(arg1) {
   return window['go']['main']['App']['ResetTraffic'](arg1);
+}
+
+export function SaveBridgeGroups(arg1) {
+  return window['go']['main']['App']['SaveBridgeGroups'](arg1);
 }
 
 export function SaveBridgeRules(arg1) {

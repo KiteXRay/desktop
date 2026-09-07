@@ -34,6 +34,8 @@ export function Disconnect():Promise<void>;
 
 export function GetAppInfo():Promise<main.AppInfoDTO>;
 
+export function GetBridgeGroups():Promise<Array<bridge.BridgeGroup>>;
+
 export function GetBridgeRules():Promise<Array<bridge.BridgeRule>>;
 
 export function GetClipboardText():Promise<string>;
@@ -77,6 +79,8 @@ export function Quit():Promise<void>;
 export function ReorderConnections(arg1:number,arg2:number):Promise<void>;
 
 export function ResetTraffic(arg1:string):Promise<void>;
+
+export function SaveBridgeGroups(arg1:Array<bridge.BridgeGroup>):Promise<void>;
 
 export function SaveBridgeRules(arg1:Array<bridge.BridgeRule>):Promise<void>;
 

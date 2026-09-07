@@ -2,7 +2,7 @@ package bridge
 
 // CheckRunningProcesses checks running system processes against active rules
 // and returns a map of ruleID -> count of matching running processes.
-func CheckRunningProcesses(rules []BridgeRule) map[string]int {
+func CheckRunningProcesses(rules []BridgeRule, groups ...[]BridgeGroup) map[string]int {
 	results := make(map[string]int)
 	for _, r := range rules {
 		results[r.ID] = 0
@@ -13,8 +13,23 @@ func CheckRunningProcesses(rules []BridgeRule) map[string]int {
 		return results
 	}
 
+	var disabledGroups map[string]bool
+	if len(groups) > 0 {
+		for _, g := range groups[0] {
+			if !g.Enabled {
+				if disabledGroups == nil {
+					disabledGroups = make(map[string]bool)
+				}
+				disabledGroups[g.ID] = true
+			}
+		}
+	}
+
 	for _, r := range rules {
 		if !r.Enabled {
+			continue
+		}
+		if r.GroupID != "" && disabledGroups != nil && disabledGroups[r.GroupID] {
 			continue
 		}
 		count := 0

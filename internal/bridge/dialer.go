@@ -20,13 +20,14 @@ type BridgeDialer struct {
 	defaultProxy     proxy.Proxy
 	directProxy      proxy.Proxy
 	rulesGetter      func() []BridgeRule
+	groupsGetter     func() []BridgeGroup
 	logger           *slog.Logger
 
 	mu            sync.RWMutex
 	customProxies map[string]proxy.Proxy
 }
 
-func NewBridgeDialer(defaultSocksAddr string, rulesGetter func() []BridgeRule, logger *slog.Logger) *BridgeDialer {
+func NewBridgeDialer(defaultSocksAddr string, rulesGetter func() []BridgeRule, logger *slog.Logger, groupsGetter ...func() []BridgeGroup) *BridgeDialer {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -39,11 +40,17 @@ func NewBridgeDialer(defaultSocksAddr string, rulesGetter func() []BridgeRule, l
 		}
 	}
 
+	var gg func() []BridgeGroup
+	if len(groupsGetter) > 0 {
+		gg = groupsGetter[0]
+	}
+
 	return &BridgeDialer{
 		defaultProxyAddr: defaultSocksAddr,
 		defaultProxy:     defProxy,
 		directProxy:      proxy.NewDirect(),
 		rulesGetter:      rulesGetter,
+		groupsGetter:     gg,
 		logger:           logger,
 		customProxies:    make(map[string]proxy.Proxy),
 	}
@@ -127,9 +134,27 @@ func (b *BridgeDialer) matchRule(procName string) *BridgeRule {
 	if procName == "" || b.rulesGetter == nil {
 		return nil
 	}
+	var disabledGroups map[string]bool
+	if b.groupsGetter != nil {
+		for _, g := range b.groupsGetter() {
+			if !g.Enabled {
+				if disabledGroups == nil {
+					disabledGroups = make(map[string]bool)
+				}
+				disabledGroups[g.ID] = true
+			}
+		}
+	}
+
 	rules := b.rulesGetter()
 	for i := range rules {
-		if rules[i].Enabled && rules[i].Matches(procName) {
+		if !rules[i].Enabled {
+			continue
+		}
+		if rules[i].GroupID != "" && disabledGroups != nil && disabledGroups[rules[i].GroupID] {
+			continue
+		}
+		if rules[i].Matches(procName) {
 			return &rules[i]
 		}
 	}

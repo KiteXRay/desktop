@@ -69,8 +69,15 @@ export interface Subscription {
   userInfo?: string;
 }
 
+export interface BridgeGroup {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
+
 export interface BridgeRule {
   id: string;
+  groupId?: string;
   pattern: string;
   proxyTarget: string;
   proxyType: 'socks5' | 'http';

@@ -140,7 +140,7 @@ func NewApp() *App {
 	devIP, dns := saveFile.GetTunnelSettings()
 	items.SetTunnelSettings(devIP, dns)
 	items.SetBridgeDialerFactory(func(defaultSocksAddr string) tproxy.Dialer {
-		return bridge.NewBridgeDialer(defaultSocksAddr, saveFile.GetBridgeRules, slog.Default())
+		return bridge.NewBridgeDialer(defaultSocksAddr, saveFile.GetBridgeRules, slog.Default(), saveFile.GetBridgeGroups)
 	})
 
 	items.OnChange(func() {
@@ -400,7 +400,7 @@ func (a *App) connectInternal(id string) error {
 	}
 	if tMode == client.TunnelModeBridge {
 		target.SetBridgeDialerFactory(func(defaultSocksAddr string) tproxy.Dialer {
-			return bridge.NewBridgeDialer(defaultSocksAddr, a.saveFile.GetBridgeRules, slog.Default())
+			return bridge.NewBridgeDialer(defaultSocksAddr, a.saveFile.GetBridgeRules, slog.Default(), a.saveFile.GetBridgeGroups)
 		})
 	}
 	devIP, dns := a.saveFile.GetTunnelSettings()
@@ -1053,7 +1053,7 @@ func (a *App) SetTunnelMode(mode string) error {
 			}
 			if tMode == client.TunnelModeBridge {
 				item.SetBridgeDialerFactory(func(defaultSocksAddr string) tproxy.Dialer {
-					return bridge.NewBridgeDialer(defaultSocksAddr, a.saveFile.GetBridgeRules, slog.Default())
+					return bridge.NewBridgeDialer(defaultSocksAddr, a.saveFile.GetBridgeRules, slog.Default(), a.saveFile.GetBridgeGroups)
 				})
 			}
 			if err := item.ConnectWithMode(tMode); err != nil {
@@ -1602,6 +1602,19 @@ func (a *App) UpdateAllSubscriptions() {
 	}
 }
 
+func (a *App) GetBridgeGroups() []bridge.BridgeGroup {
+	return a.saveFile.GetBridgeGroups()
+}
+
+func (a *App) SaveBridgeGroups(groups []bridge.BridgeGroup) error {
+	a.saveFile.SetBridgeGroups(groups)
+	a.saveFile.Update(a.items)
+	if a.ctx != nil {
+		wruntime.EventsEmit(a.ctx, "bridge:groups_changed", groups)
+	}
+	return nil
+}
+
 func (a *App) GetBridgeRules() []bridge.BridgeRule {
 	return a.saveFile.GetBridgeRules()
 }
@@ -1617,7 +1630,8 @@ func (a *App) SaveBridgeRules(rules []bridge.BridgeRule) error {
 
 func (a *App) CheckRunningBridgeProcesses() map[string]int {
 	rules := a.saveFile.GetBridgeRules()
-	return bridge.CheckRunningProcesses(rules)
+	groups := a.saveFile.GetBridgeGroups()
+	return bridge.CheckRunningProcesses(rules, groups)
 }
 
 func (a *App) LaunchBridgeRule(ruleID string, exePath string) error {

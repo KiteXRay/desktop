@@ -10,8 +10,15 @@ import (
 	"strings"
 )
 
+type BridgeGroup struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+}
+
 type BridgeRule struct {
 	ID          string `json:"id"`
+	GroupID     string `json:"groupId,omitempty"`
 	Pattern     string `json:"pattern"`     // e.g. "Discovery*.exe", "curl"
 	ProxyTarget string `json:"proxyTarget"` // e.g. "socks5://127.0.0.1:10808", "http://127.0.0.1:10809"
 	ProxyType   string `json:"proxyType"`   // "socks5" | "http"

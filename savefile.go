@@ -33,6 +33,7 @@ type AppConfigFile struct {
 	TunnelDeviceIP string                      `json:"tunnelDeviceIp,omitempty"`
 	TunnelDNS      string                      `json:"tunnelDns,omitempty"`
 	Subscriptions  []subscription.Subscription `json:"subscriptions,omitempty"`
+	BridgeGroups   []bridge.BridgeGroup        `json:"bridgeGroups,omitempty"`
 	BridgeRules    []bridge.BridgeRule         `json:"bridgeRules,omitempty"`
 	Connections    []SavedState                `json:"connections"`
 }
@@ -43,6 +44,7 @@ type SaveFile struct {
 	tunnelDeviceIP string
 	tunnelDNS      string
 	subscriptions  []subscription.Subscription
+	bridgeGroups   []bridge.BridgeGroup
 	bridgeRules    []bridge.BridgeRule
 	mu             sync.Mutex
 }
@@ -68,6 +70,7 @@ func NewSaveFileWithPath(path string) *SaveFile {
 		tunnelDeviceIP: "192.18.0.1",
 		tunnelDNS:      "8.8.8.8",
 		subscriptions:  make([]subscription.Subscription, 0),
+		bridgeGroups:   make([]bridge.BridgeGroup, 0),
 		bridgeRules:    make([]bridge.BridgeRule, 0),
 	}
 }
@@ -151,6 +154,21 @@ func (s *SaveFile) SetSubscriptions(subs []subscription.Subscription) {
 	copy(s.subscriptions, subs)
 }
 
+func (s *SaveFile) GetBridgeGroups() []bridge.BridgeGroup {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res := make([]bridge.BridgeGroup, len(s.bridgeGroups))
+	copy(res, s.bridgeGroups)
+	return res
+}
+
+func (s *SaveFile) SetBridgeGroups(groups []bridge.BridgeGroup) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.bridgeGroups = make([]bridge.BridgeGroup, len(groups))
+	copy(s.bridgeGroups, groups)
+}
+
 func (s *SaveFile) GetBridgeRules() []bridge.BridgeRule {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -166,7 +184,7 @@ func (s *SaveFile) SetBridgeRules(rules []bridge.BridgeRule) {
 	copy(s.bridgeRules, rules)
 }
 
-// Update saves list, tunnel mode, settings, subscriptions, and bridge rules atomically into JSON file.
+// Update saves list, tunnel mode, settings, subscriptions, bridge groups, and bridge rules atomically into JSON file.
 func (s *SaveFile) Update(list *connlist.Collection) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -198,6 +216,7 @@ func (s *SaveFile) Update(list *connlist.Collection) {
 		TunnelDeviceIP: devIP,
 		TunnelDNS:      dns,
 		Subscriptions:  s.subscriptions,
+		BridgeGroups:   s.bridgeGroups,
 		BridgeRules:    s.bridgeRules,
 		Connections:    toSave,
 	}
@@ -278,6 +297,9 @@ func (s *SaveFile) Load(list *connlist.Collection) {
 				}
 			}
 			s.subscriptions = appCfg.Subscriptions
+		}
+		if appCfg.BridgeGroups != nil {
+			s.bridgeGroups = appCfg.BridgeGroups
 		}
 		if appCfg.BridgeRules != nil {
 			s.bridgeRules = appCfg.BridgeRules

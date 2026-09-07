@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/KiteXRay/desktop/internal/bridge"
 	"github.com/KiteXRay/desktop/internal/connlist"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -106,4 +107,49 @@ func TestApp_GetTunnelSettingsDTO(t *testing.T) {
 	dto := app.GetTunnelSettings()
 	assert.Equal(t, "192.18.0.5", dto.DeviceIP)
 	assert.Equal(t, "1.1.1.1", dto.DNS)
+}
+
+func TestSaveFile_BridgeGroupsAndRules(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "connections.json")
+
+	sf1 := NewSaveFileWithPath(cfgPath)
+	require.Empty(t, sf1.GetBridgeGroups())
+	require.Empty(t, sf1.GetBridgeRules())
+
+	groups := []bridge.BridgeGroup{
+		{ID: "group-1", Name: "Browsers", Enabled: true},
+		{ID: "group-2", Name: "Games", Enabled: false},
+	}
+	rules := []bridge.BridgeRule{
+		{ID: "rule-1", GroupID: "group-1", Pattern: "chrome.exe", ProxyTarget: "socks5://127.0.0.1:10808", ProxyType: "socks5", Enabled: true},
+		{ID: "rule-2", GroupID: "group-2", Pattern: "game.exe", ProxyTarget: "http://127.0.0.1:10809", ProxyType: "http", Enabled: true},
+	}
+
+	sf1.SetBridgeGroups(groups)
+	sf1.SetBridgeRules(rules)
+	list1 := connlist.New()
+	sf1.Update(list1)
+
+	// Load into a fresh SaveFile instance
+	sf2 := NewSaveFileWithPath(cfgPath)
+	list2 := connlist.New()
+	sf2.Load(list2)
+
+	loadedGroups := sf2.GetBridgeGroups()
+	loadedRules := sf2.GetBridgeRules()
+
+	require.Len(t, loadedGroups, 2)
+	assert.Equal(t, "group-1", loadedGroups[0].ID)
+	assert.Equal(t, "Browsers", loadedGroups[0].Name)
+	assert.True(t, loadedGroups[0].Enabled)
+	assert.Equal(t, "group-2", loadedGroups[1].ID)
+	assert.Equal(t, "Games", loadedGroups[1].Name)
+	assert.False(t, loadedGroups[1].Enabled)
+
+	require.Len(t, loadedRules, 2)
+	assert.Equal(t, "group-1", loadedRules[0].GroupID)
+	assert.Equal(t, "chrome.exe", loadedRules[0].Pattern)
+	assert.Equal(t, "group-2", loadedRules[1].GroupID)
+	assert.Equal(t, "game.exe", loadedRules[1].Pattern)
 }
