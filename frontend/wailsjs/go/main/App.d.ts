@@ -58,6 +58,8 @@ export function GetTunnelSettings():Promise<main.TunnelSettingsDTO>;
 
 export function GrantNetworkPrivileges():Promise<boolean>;
 
+export function ImportWireguardConfig(arg1:string,arg2:string):Promise<main.ConnectionDTO>;
+
 export function InstallUpdate(arg1:string,arg2:string):Promise<void>;
 
 export function LaunchAndRouteApp(arg1:string,arg2:string):Promise<void>;

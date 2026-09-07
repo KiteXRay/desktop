@@ -22,6 +22,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/goxray/core/awg"
+	"github.com/goxray/core/wireguard"
 	"github.com/goxray/core/network/route"
 	"github.com/goxray/core/network/tun"
 	"github.com/goxray/core/pipe2socks"
@@ -109,6 +111,8 @@ type Client struct {
 	xInst  xrayproto.Instance
 	xCfg   *xrayproto.GeneralConfig
 	xSrvIP *net.IPAddr
+
+	awgEngine *awg.Engine
 
 	tunnel      io.ReadWriteCloser
 	tunnelCmd   *exec.Cmd
@@ -225,11 +229,19 @@ func (c *Client) SetTunnelSettings(deviceIP, dns string) {
 }
 
 func (c *Client) BytesRead() int {
-	return int(c.bytesRead.Load())
+	awgBytes := int64(0)
+	if c.awgEngine != nil {
+		awgBytes = c.awgEngine.BytesRead()
+	}
+	return int(c.bytesRead.Load() + awgBytes)
 }
 
 func (c *Client) BytesWritten() int {
-	return int(c.bytesWritten.Load())
+	awgBytes := int64(0)
+	if c.awgEngine != nil {
+		awgBytes = c.awgEngine.BytesWritten()
+	}
+	return int(c.bytesWritten.Load() + awgBytes)
 }
 
 func (c *Client) Connect(link string) error {
@@ -246,18 +258,40 @@ func (c *Client) ConnectWithMode(link string, mode TunnelMode) error {
 		c.cfg.GatewayIP = &gw
 	}
 
-	// Ensure XRay listens directly on the standard SOCKS5 port (127.0.0.1:10808)
+	// Ensure XRay / AWG listens directly on the standard SOCKS5 port (127.0.0.1:10808)
 	c.cfg.InboundProxy.IP = net.IPv4(127, 0, 0, 1)
 	c.cfg.InboundProxy.Port = c.cfg.SocksPort
 
-	var err error
-	c.xInst, c.xCfg, err = c.createXrayProxy(link)
-	if err != nil {
-		return fmt.Errorf("create xray core instance: %w", err)
-	}
+	if wireguard.IsAWGLink(link) {
+		awgCfg, _, err := wireguard.ParseLink(link)
+		if err != nil {
+			return fmt.Errorf("parse awg link: %w", err)
+		}
 
-	if err = c.xInst.Start(); err != nil {
-		return fmt.Errorf("start xray core instance: %w", err)
+		endpointHost := awgCfg.Endpoint
+		if h, _, err := net.SplitHostPort(awgCfg.Endpoint); err == nil {
+			endpointHost = h
+		}
+		ip, err := net.ResolveIPAddr("ip", endpointHost)
+		if err != nil {
+			return fmt.Errorf("awg endpoint not resolvable: %w", err)
+		}
+		c.xSrvIP = ip
+
+		c.awgEngine = awg.NewEngine()
+		if err := c.awgEngine.Start(awgCfg, c.cfg.SocksPort); err != nil {
+			return fmt.Errorf("start awg engine: %w", err)
+		}
+	} else {
+		var err error
+		c.xInst, c.xCfg, err = c.createXrayProxy(link)
+		if err != nil {
+			return fmt.Errorf("create xray core instance: %w", err)
+		}
+
+		if err = c.xInst.Start(); err != nil {
+			return fmt.Errorf("start xray core instance: %w", err)
+		}
 	}
 	time.Sleep(120 * time.Millisecond)
 
@@ -669,6 +703,13 @@ func (c *Client) Disconnect(ctx context.Context) error {
 		c.xInst = nil
 	}
 
+	if c.awgEngine != nil {
+		if err := c.awgEngine.Close(); err != nil {
+			errs = append(errs, err)
+		}
+		c.awgEngine = nil
+	}
+
 	c.cfg.Logger.Info("Client disconnected successfully")
 
 	if len(errs) > 0 {
@@ -722,7 +763,11 @@ func (c *Client) createXrayProxy(link string) (xrayproto.Instance, *xrayproto.Ge
 		return nil, nil, fmt.Errorf("make instance: %w", err)
 	}
 
-	ip, err := net.ResolveIPAddr("ip", cfg.Address)
+	host := cfg.Address
+	if h, _, err := net.SplitHostPort(cfg.Address); err == nil {
+		host = h
+	}
+	ip, err := net.ResolveIPAddr("ip", host)
 	if err != nil {
 		return nil, nil, fmt.Errorf("xray address not resolvable: %w", err)
 	}

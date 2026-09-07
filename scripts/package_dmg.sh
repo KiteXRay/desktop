@@ -2,7 +2,7 @@
 set -e
 
 # Usage: ./scripts/package_dmg.sh [version] [arch]
-VERSION="${1:-1.2.1}"
+VERSION="${1:-1.3.0}"
 VERSION="${VERSION#v}"
 ARCH="${2:-universal}"
 
@@ -47,9 +47,11 @@ mkdir -p "${RESOURCES_DIR}"
 if [ -f "${ROOT_DIR}/build/darwin/iconfile.icns" ]; then
     cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${RESOURCES_DIR}/iconfile.icns"
     cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${RESOURCES_DIR}/iconfile"
+    cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${RESOURCES_DIR}/iconfile.icns.icns"
     cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${RESOURCES_DIR}/icon.icns"
     cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${RESOURCES_DIR}/appicon.icns"
 fi
+touch "${APP_PATH}"
 
 # Ensure executable has execute permissions and proper bundle permissions
 chmod -R 755 "${APP_PATH}"
@@ -93,6 +95,7 @@ chmod -R 755 "${DMG_STAGING}/Kite.app"
 if [ -d "${DMG_STAGING}/Kite.app/Contents/MacOS" ]; then
     chmod +x "${DMG_STAGING}/Kite.app/Contents/MacOS"/* || true
 fi
+touch "${DMG_STAGING}/Kite.app"
 
 # Add standard drag-and-drop link to /Applications
 ln -s /Applications "${DMG_STAGING}/Applications"

@@ -18,6 +18,7 @@ import {
   EyeOff,
   ChevronDown,
   Plus,
+  FileUp,
 } from 'lucide-react';
 import { api } from '../api/wails';
 import type { ConnectionDTO } from '../types';
@@ -91,8 +92,37 @@ const AddProfileModalView: React.FC<AddProfileModalViewProps> = ({ onClose, onSu
   const [successInfo, setSuccessInfo] = useState<string | null>(null);
 
   const trimmed = inputLink.trim();
-  const isSubscription = trimmed.startsWith('http://') || trimmed.startsWith('https://');
-  const isConnection = /^(vless|vmess|ss|trojan|tuic|hysteria2?|wireguard):\/\//i.test(trimmed);
+  const isConf = /\[interface\]/i.test(trimmed) && /\[peer\]/i.test(trimmed);
+  const isSubscription = !isConf && (trimmed.startsWith('http://') || trimmed.startsWith('https://'));
+  const isConnection = /^(vless|vmess|ss|trojan|tuic|hysteria2?|wireguard|awg):\/\//i.test(trimmed) || isConf;
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleChooseFile = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = event => {
+      const content = event.target?.result as string;
+      if (content) {
+        setInputLink(content.trim());
+        setError(null);
+        if (!customLabel.trim()) {
+          const baseName = file.name.replace(/\.[^/.]+$/, '');
+          if (baseName) {
+            setCustomLabel(baseName);
+          }
+        }
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   const handlePaste = async () => {
     try {
@@ -153,7 +183,7 @@ const AddProfileModalView: React.FC<AddProfileModalViewProps> = ({ onClose, onSu
                 Add Profile or Subscription
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Paste a connection link (vless, vmess, trojan, ss) or subscription URL
+                Paste a connection link (vless, vmess, trojan, ss, wireguard), .conf file, or subscription URL
               </p>
             </div>
           </div>
@@ -181,27 +211,45 @@ const AddProfileModalView: React.FC<AddProfileModalViewProps> = ({ onClose, onSu
             </div>
           )}
 
-          {/* Connection Link or Subscription URL */}
+          {/* Connection Link / Subscription URL Input */}
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                {isSubscription ? <Rss className="w-3.5 h-3.5 text-amber-400" /> : <LinkIcon className="w-3.5 h-3.5 text-indigo-400" />}
-                <span>Connection Link or Subscription URL</span>
+              <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                <span>Link, URL, or Config</span>
+                <span className="text-[10px] font-normal text-slate-500">(Required)</span>
               </label>
-              <button
-                type="button"
-                onClick={handlePaste}
-                className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer transition-colors active:scale-95"
-              >
-                <Clipboard className="w-3.5 h-3.5" />
-                <span>Paste</span>
-              </button>
+              <div className="flex items-center gap-2.5">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".conf,.txt"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={handleChooseFile}
+                  className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 font-medium cursor-pointer transition-colors active:scale-95"
+                  title="Import a WireGuard or AmneziaWG .conf file"
+                >
+                  <FileUp className="w-3.5 h-3.5" />
+                  <span>Choose .conf</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePaste}
+                  className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer transition-colors active:scale-95"
+                >
+                  <Clipboard className="w-3.5 h-3.5" />
+                  <span>Paste</span>
+                </button>
+              </div>
             </div>
 
             <textarea
               value={inputLink}
               onChange={e => setInputLink(e.target.value)}
-              placeholder="vless://..., vmess://..., trojan://..., ss://... or https://example.com/sub/..."
+              placeholder="Paste vless://, wireguard://, subscription URL, or upload a .conf file..."
               rows={3}
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/70 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-100 placeholder-slate-600 text-xs font-mono transition-colors outline-hidden resize-none"
               autoFocus
@@ -210,7 +258,12 @@ const AddProfileModalView: React.FC<AddProfileModalViewProps> = ({ onClose, onSu
             {/* Smart Detection Indicator */}
             {trimmed && (
               <div className="flex items-center gap-2 pt-1 text-[11px]">
-                {isSubscription ? (
+                {isConf ? (
+                  <span className="flex items-center gap-1.5 text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                    <Shield className="w-3 h-3 text-emerald-400" />
+                    WireGuard / AmneziaWG Configuration File (.conf)
+                  </span>
+                ) : isSubscription ? (
                   <span className="flex items-center gap-1.5 text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
                     <Rss className="w-3 h-3" />
                     Subscription URL (Will fetch and import all servers)
@@ -223,7 +276,7 @@ const AddProfileModalView: React.FC<AddProfileModalViewProps> = ({ onClose, onSu
                 ) : (
                   <span className="flex items-center gap-1.5 text-slate-400 bg-slate-800/40 px-2 py-0.5 rounded-md border border-slate-700/50">
                     <AlertCircle className="w-3 h-3 text-slate-400" />
-                    Enter a valid link (vless/vmess/ss/trojan) or subscription URL (http/https)
+                    Enter a valid link (vless/vmess/ss/trojan/wireguard), .conf file, or subscription URL
                   </span>
                 )}
               </div>
@@ -554,6 +607,7 @@ const EditProfileModalView: React.FC<EditProfileModalViewProps> = ({
                     <option value="vmess" className="bg-slate-900 text-slate-200 py-1">vmess</option>
                     <option value="trojan" className="bg-slate-900 text-slate-200 py-1">trojan</option>
                     <option value="shadowsocks" className="bg-slate-900 text-slate-200 py-1">shadowsocks</option>
+                    <option value="wireguard" className="bg-slate-900 text-slate-200 py-1">wireguard</option>
                   </StyledSelect>
 
                   <div>
@@ -584,6 +638,102 @@ const EditProfileModalView: React.FC<EditProfileModalViewProps> = ({
                 </div>
               </div>
 
+              {/* WireGuard Interface & Peer Settings */}
+              {protoVal === 'wireguard' && (
+                <div className="bg-slate-950/40 rounded-xl p-4 border border-slate-800/80 flex flex-col gap-3.5">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                    <Shield className="w-3.5 h-3.5" />
+                    <span>WireGuard Interface & Peer</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="sm:col-span-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-medium text-slate-400">
+                          Private Key (SecretKey)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowSecret(!showSecret)}
+                          className="text-[11px] text-slate-500 hover:text-slate-300 flex items-center gap-1 cursor-pointer"
+                        >
+                          {showSecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          <span>{showSecret ? 'Hide' : 'Show'}</span>
+                        </button>
+                      </div>
+                      <input
+                        type={showSecret ? 'text' : 'password'}
+                        value={params.SecretKey || params.Secretkey || params.PrivateKey || params.ID || ''}
+                        onChange={e => {
+                          updateParams({
+                            SecretKey: e.target.value,
+                            Secretkey: e.target.value,
+                            PrivateKey: e.target.value,
+                            ID: e.target.value,
+                          });
+                        }}
+                        placeholder="Base64 32-byte private key..."
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-emerald-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                        Peer Public Key
+                      </label>
+                      <input
+                        type="text"
+                        value={params.PublicKey || params.Publickey || ''}
+                        onChange={e => updateParams({ PublicKey: e.target.value, Publickey: e.target.value })}
+                        placeholder="Base64 32-byte server public key..."
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-emerald-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                        Local Client IP (CIDR)
+                      </label>
+                      <input
+                        type="text"
+                        value={params.LocalAddress || params.LocalIP || ''}
+                        onChange={e => updateParams({ LocalAddress: e.target.value, LocalIP: e.target.value })}
+                        placeholder="e.g. 10.0.0.2/32"
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-emerald-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                        MTU
+                      </label>
+                      <input
+                        type="text"
+                        value={params.MTU || params.Mtu || '1420'}
+                        onChange={e => updateParams({ MTU: e.target.value, Mtu: e.target.value })}
+                        placeholder="1420"
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-emerald-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                        Pre-Shared Key (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={params.PreSharedKey || params.Presharedkey || ''}
+                        onChange={e => updateParams({ PreSharedKey: e.target.value, Presharedkey: e.target.value })}
+                        placeholder="Optional preshared key..."
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-emerald-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {protoVal !== 'wireguard' && (
+                <>
               {/* Section 2: Authentication & Security */}
               <div className="bg-slate-950/40 rounded-xl p-4 border border-slate-800/80 flex flex-col gap-3.5">
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-indigo-400">
@@ -885,6 +1035,8 @@ const EditProfileModalView: React.FC<EditProfileModalViewProps> = ({
                   )}
                 </div>
               </div>
+              </>
+              )}
 
               {/* Dynamic Link Preview */}
               {link && (

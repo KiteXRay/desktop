@@ -1,6 +1,6 @@
-## Kite v1.2.1
+## Kite v1.3.0
 
-### 🛠️ Fixes & UI Enhancements
-- **Clean Profile Cards**: Removed redundant connecting/disconnecting badge in the profile card header.
-- **macOS Settings Persistence**: Ensured profile and application settings persist reliably on macOS across launches.
-- **Standalone TUN Helper**: Isolated TUN interface routing into standalone helper for Linux and macOS.
+### 🚀 Features & Enhancements
+- **WireGuard & AmneziaWG (AWG) Protocol Support**: Integrated userspace AmneziaWG engine with SOCKS5 bridge and full support for obfuscation parameters (`Jc`, `Jmin`, `Jmax`, `S1`, `S2`, `H1`–`H4`).
+- **Configuration Import**: Added direct import for WireGuard and AmneziaWG `.conf` files via file picker dialog and URI pasting.
+- **Robust Outbound Probes**: Improved health watchdog and tunnel connectivity verification to avoid DNS deadlock during handshake.

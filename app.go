@@ -24,7 +24,9 @@ import (
 	tproxy "github.com/xjasonlyu/tun2socks/v2/proxy"
 	socks5proxy "golang.org/x/net/proxy"
 
+	"github.com/goxray/core/awg"
 	"github.com/goxray/core/client"
+	"github.com/goxray/core/wireguard"
 	"github.com/KiteXRay/desktop/internal/appscan"
 	"github.com/KiteXRay/desktop/internal/bridge"
 	"github.com/KiteXRay/desktop/internal/connlist"
@@ -250,12 +252,31 @@ func (a *App) GetConnections() []ConnectionDTO {
 }
 
 func (a *App) AddConnection(label, link string) (*ConnectionDTO, error) {
+	label = strings.TrimSpace(label)
 	link = strings.TrimSpace(link)
+
+	// In case caller swapped label and link
+	if wireguard.IsConfContent(label) || strings.Contains(label, "://") {
+		if !wireguard.IsConfContent(link) && !strings.Contains(link, "://") {
+			label, link = link, label
+		}
+	}
+
 	if link == "" {
 		return nil, errors.New("link cannot be empty")
 	}
 
-	label = strings.TrimSpace(label)
+	if wireguard.IsConfContent(link) {
+		cfg, err := wireguard.ParseConf(link)
+		if err != nil {
+			return nil, fmt.Errorf("invalid wireguard config: %w", err)
+		}
+		if label == "" {
+			label = "Server"
+		}
+		link = cfg.ToURI(label)
+	}
+
 	if label == "" {
 		if idx := strings.Index(link, "#"); idx != -1 && idx+1 < len(link) {
 			if unescaped, err := url.QueryUnescape(link[idx+1:]); err == nil && unescaped != "" {
@@ -269,12 +290,18 @@ func (a *App) AddConnection(label, link string) (*ConnectionDTO, error) {
 		}
 	}
 
-	proto, err := (&xray3.Core{}).CreateProtocol(link)
-	if err != nil {
-		return nil, fmt.Errorf("create xray protocol: %w", err)
-	}
-	if err := proto.Parse(); err != nil {
-		return nil, fmt.Errorf("parse xray protocol: %w", err)
+	if wireguard.IsAWGLink(link) {
+		if _, _, err := wireguard.ParseLink(link); err != nil {
+			return nil, fmt.Errorf("parse awg protocol: %w", err)
+		}
+	} else {
+		proto, err := (&xray3.Core{}).CreateProtocol(link)
+		if err != nil {
+			return nil, fmt.Errorf("create xray protocol: %w", err)
+		}
+		if err := proto.Parse(); err != nil {
+			return nil, fmt.Errorf("parse xray protocol: %w", err)
+		}
 	}
 
 	if err := a.items.AddItem(label, link); err != nil {
@@ -288,9 +315,24 @@ func (a *App) AddConnection(label, link string) (*ConnectionDTO, error) {
 	return nil, nil
 }
 
+func (a *App) ImportWireguardConfig(content, label string) (*ConnectionDTO, error) {
+	cfg, err := wireguard.ParseConf(content)
+	if err != nil {
+		return nil, fmt.Errorf("parse wireguard config: %w", err)
+	}
+	link := cfg.ToURI(label)
+	return a.AddConnection(label, link)
+}
+
 func (a *App) UpdateConnection(id string, label, link string) error {
 	if label == "" || link == "" {
 		return errors.New("label and link cannot be empty")
+	}
+
+	if wireguard.IsConfContent(link) {
+		if cfg, err := wireguard.ParseConf(link); err == nil {
+			link = cfg.ToURI(label)
+		}
 	}
 
 	item := a.items.FindByID(id)
@@ -591,7 +633,7 @@ func (a *App) ResetTraffic(id string) error {
 	return nil
 }
 
-var appVersion = "1.2.1"
+var appVersion = "1.3.0"
 
 func (a *App) GetAppInfo() AppInfoDTO {
 	return AppInfoDTO{
@@ -658,6 +700,14 @@ func pingRoutedConnection(link string, timeout time.Duration) (latency int64) {
 			latency = -1
 		}
 	}()
+
+	if wireguard.IsAWGLink(link) {
+		awgCfg, _, err := wireguard.ParseLink(link)
+		if err != nil {
+			return -1
+		}
+		return awg.Ping(awgCfg, timeout)
+	}
 
 	coreService := xray3.NewXrayService(false, true)
 	proto, err := coreService.CreateProtocol(link)
@@ -926,6 +976,14 @@ func (a *App) InstallUpdate(assetURL, releaseURL string) error {
 }
 
 func (a *App) ParseLinkPreview(link string) (map[string]string, error) {
+	if wireguard.IsAWGLink(link) {
+		cfg, remark, err := wireguard.ParseLink(link)
+		if err != nil {
+			return nil, fmt.Errorf("parse awg link: %w", err)
+		}
+		return cfg.ToMap(remark), nil
+	}
+
 	proto, err := (&xray3.Core{}).CreateProtocol(link)
 	if err != nil {
 		return nil, fmt.Errorf("create protocol: %w", err)
@@ -1300,8 +1358,8 @@ func (a *App) handleSystemWakeUp() {
 		err := a.connectInternal(activeID)
 		if err == nil {
 			// Verify that traffic actually passes through the tunnel to the server!
-			time.Sleep(300 * time.Millisecond)
-			if a.verifyTunnelConnectivity(2500 * time.Millisecond) {
+			time.Sleep(800 * time.Millisecond)
+			if a.verifyTunnelConnectivity(3500 * time.Millisecond) {
 				slog.Info("VPN session successfully restored and verified after wake-up", "id", activeID)
 				return
 			}
@@ -1377,7 +1435,7 @@ func (a *App) startHealthWatchdog() {
 
 			// 2. Active health check: verify that traffic is passing through the tunnel!
 			// If probe fails 3 consecutive ticks (15s), auto-heal connection!
-			if !a.verifyTunnelConnectivity(2 * time.Second) {
+			if !a.verifyTunnelConnectivity(3 * time.Second) {
 				consecutiveFails++
 				slog.Warn("HealthWatchdog: tunnel connectivity probe failed", "consecutiveFails", consecutiveFails, "id", actID)
 				if consecutiveFails >= 3 {
@@ -1397,13 +1455,14 @@ func (a *App) verifyTunnelConnectivity(timeout time.Duration) bool {
 	if err != nil {
 		return false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
 
-	targets := []string{"cp.cloudflare.com:80", "1.1.1.1:443", "www.google.com:443", "8.8.8.8:53"}
+	targets := []string{"1.1.1.1:80", "1.0.0.1:80", "1.1.1.1:443", "8.8.8.8:53", "cp.cloudflare.com:80"}
 	if cd, ok := dialer.(socks5proxy.ContextDialer); ok {
 		for _, target := range targets {
-			if conn, err := cd.DialContext(ctx, "tcp", target); err == nil {
+			subCtx, subCancel := context.WithTimeout(context.Background(), timeout)
+			conn, err := cd.DialContext(subCtx, "tcp", target)
+			subCancel()
+			if err == nil {
 				_ = conn.Close()
 				return true
 			}
@@ -1481,8 +1540,14 @@ func (a *App) AddConnectionOrSubscription(input, label string) (map[string]any, 
 
 		addedCount := 0
 		for _, link := range links {
-			if _, err := (&xray3.Core{}).CreateProtocol(link); err != nil {
-				continue
+			if !wireguard.IsAWGLink(link) {
+				if _, err := (&xray3.Core{}).CreateProtocol(link); err != nil {
+					continue
+				}
+			} else {
+				if _, _, err := wireguard.ParseLink(link); err != nil {
+					continue
+				}
 			}
 			itmLabel := subscription.ExtractLabelFromLink(link)
 			if itmLabel == "" {
@@ -1560,8 +1625,14 @@ func (a *App) UpdateSubscription(id string) error {
 	// Update existing items in-place to preserve IDs, traffic stats, and order
 	for i := 0; i < len(links); i++ {
 		link := links[i]
-		if _, err := (&xray3.Core{}).CreateProtocol(link); err != nil {
-			continue
+		if !wireguard.IsAWGLink(link) {
+			if _, err := (&xray3.Core{}).CreateProtocol(link); err != nil {
+				continue
+			}
+		} else {
+			if _, _, err := wireguard.ParseLink(link); err != nil {
+				continue
+			}
 		}
 		lbl := subscription.ExtractLabelFromLink(link)
 		if lbl == "" {

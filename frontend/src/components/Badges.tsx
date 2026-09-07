@@ -18,7 +18,15 @@ export const ProtocolBadges: React.FC<ProtocolBadgeProps> = ({
   return (
     <div className="flex flex-wrap items-center gap-1">
       {protocol && (
-        <span className="px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">
+        <span
+          className={`px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider rounded border ${
+            protocol.toLowerCase() === 'wireguard'
+              ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25'
+              : protocol.toLowerCase() === 'awg'
+              ? 'bg-teal-500/15 text-teal-300 border-teal-500/25'
+              : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/25'
+          }`}
+        >
           {protocol}
         </span>
       )}

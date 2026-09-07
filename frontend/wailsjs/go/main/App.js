@@ -106,6 +106,10 @@ export function GrantNetworkPrivileges() {
   return window['go']['main']['App']['GrantNetworkPrivileges']();
 }
 
+export function ImportWireguardConfig(arg1, arg2) {
+  return window['go']['main']['App']['ImportWireguardConfig'](arg1, arg2);
+}
+
 export function InstallUpdate(arg1, arg2) {
   return window['go']['main']['App']['InstallUpdate'](arg1, arg2);
 }

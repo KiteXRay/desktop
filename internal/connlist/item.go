@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"unicode"
 
@@ -17,6 +19,7 @@ import (
 	tproxy "github.com/xjasonlyu/tun2socks/v2/proxy"
 
 	"github.com/KiteXRay/desktop/internal/netchart"
+	"github.com/goxray/core/wireguard"
 )
 
 type Client interface {
@@ -99,17 +102,25 @@ func (c *Item) Close() {
 }
 
 func (c *Item) init() error {
-	proto, err := (&xray3.Core{}).CreateProtocol(c.Link())
-	if err != nil {
-		return fmt.Errorf("invalid xray link: %s", err)
-	}
-	if err := proto.Parse(); err != nil {
-		return fmt.Errorf("invalid xray link: %s", err)
-	}
+	if wireguard.IsAWGLink(c.Link()) {
+		cfg, remark, err := wireguard.ParseLink(c.Link())
+		if err != nil {
+			return fmt.Errorf("invalid awg link: %w", err)
+		}
+		c.xconfigMap = cfg.ToMap(remark)
+	} else {
+		proto, err := (&xray3.Core{}).CreateProtocol(c.Link())
+		if err != nil {
+			return fmt.Errorf("invalid xray link: %s", err)
+		}
+		if err := proto.Parse(); err != nil {
+			return fmt.Errorf("invalid xray link: %s", err)
+		}
 
-	c.xconfigMap, err = c.xrayBaseConfigToMap(proto)
-	if err != nil {
-		return fmt.Errorf("parse xray config to map: %s", err)
+		c.xconfigMap, err = c.xrayBaseConfigToMap(proto)
+		if err != nil {
+			return fmt.Errorf("parse xray config to map: %s", err)
+		}
 	}
 
 	cl, err := vpn.NewClientWithOpts(vpn.Config{
@@ -232,6 +243,18 @@ func (c *Item) xrayBaseConfigToMap(proto xrayproto.Protocol) (map[string]string,
 		if capitalized != k {
 			xmap[capitalized] = xmap[k]
 			delete(xmap, k)
+		}
+	}
+
+	if strings.ToLower(xmap["Protocol"]) == "wireguard" {
+		endpoint := xmap["Endpoint"]
+		if endpoint != "" {
+			if h, p, err := net.SplitHostPort(endpoint); err == nil {
+				xmap["Address"] = h
+				xmap["Port"] = p
+			} else {
+				xmap["Address"] = endpoint
+			}
 		}
 	}
 

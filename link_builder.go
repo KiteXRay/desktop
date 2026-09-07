@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/goxray/core/wireguard"
 	xray3 "github.com/lilendian0x00/xray-knife/v3/pkg/xray"
 )
 
@@ -237,8 +238,156 @@ func buildLinkFromMap(cfg map[string]string) (string, error) {
 			link += "#" + url.PathEscape(remark)
 		}
 
+	case "wireguard":
+		secretKey := strings.TrimSpace(cfg["SecretKey"])
+		if secretKey == "" {
+			secretKey = strings.TrimSpace(cfg["PrivateKey"])
+		}
+		if secretKey == "" {
+			secretKey = id
+		}
+		if secretKey == "" {
+			return "", fmt.Errorf("private/secret key is required for WireGuard")
+		}
+
+		pubKey := strings.TrimSpace(cfg["PublicKey"])
+		if pubKey == "" {
+			pubKey = strings.TrimSpace(cfg["Pubkey"])
+		}
+		if pubKey == "" {
+			return "", fmt.Errorf("public key is required for WireGuard")
+		}
+
+		endpoint := addr
+		if port != "" && !strings.Contains(addr, ":") {
+			endpoint = fmt.Sprintf("%s:%s", addr, port)
+		}
+
+		localAddr := strings.TrimSpace(cfg["LocalAddress"])
+		if localAddr == "" {
+			localAddr = strings.TrimSpace(cfg["LocalIP"])
+		}
+		if localAddr == "" {
+			localAddr = "10.0.0.2/32"
+		}
+
+		v := url.Values{}
+		v.Set("publickey", pubKey)
+		v.Set("address", localAddr)
+
+		if psk := strings.TrimSpace(cfg["PreSharedKey"]); psk != "" {
+			v.Set("presharedkey", psk)
+		} else if psk := strings.TrimSpace(cfg["Psk"]); psk != "" {
+			v.Set("presharedkey", psk)
+		}
+
+		mtu := strings.TrimSpace(cfg["MTU"])
+		if mtu == "" {
+			mtu = strings.TrimSpace(cfg["Mtu"])
+		}
+		if mtu != "" {
+			v.Set("mtu", mtu)
+		}
+
+		if res := strings.TrimSpace(cfg["Reserved"]); res != "" {
+			v.Set("reserved", res)
+		}
+
+		encodedQuery := v.Encode()
+		u := fmt.Sprintf("wireguard://%s@%s", url.PathEscape(secretKey), endpoint)
+		link = u
+		if encodedQuery != "" {
+			link += "?" + encodedQuery
+		}
+		if remark != "" {
+			link += "#" + url.PathEscape(remark)
+		}
+
+	case "awg", "amneziawg":
+		secretKey := strings.TrimSpace(cfg["SecretKey"])
+		if secretKey == "" {
+			secretKey = strings.TrimSpace(cfg["PrivateKey"])
+		}
+		if secretKey == "" {
+			secretKey = id
+		}
+		if secretKey == "" {
+			return "", fmt.Errorf("private/secret key is required for AmneziaWG")
+		}
+
+		pubKey := strings.TrimSpace(cfg["PublicKey"])
+		if pubKey == "" {
+			pubKey = strings.TrimSpace(cfg["Pubkey"])
+		}
+		if pubKey == "" {
+			return "", fmt.Errorf("public key is required for AmneziaWG")
+		}
+
+		endpoint := addr
+		if port != "" && !strings.Contains(addr, ":") {
+			endpoint = fmt.Sprintf("%s:%s", addr, port)
+		}
+
+		localAddr := strings.TrimSpace(cfg["LocalAddress"])
+		if localAddr == "" {
+			localAddr = strings.TrimSpace(cfg["LocalIP"])
+		}
+		if localAddr == "" {
+			localAddr = "10.0.0.2/32"
+		}
+
+		v := url.Values{}
+		v.Set("publickey", pubKey)
+		v.Set("address", localAddr)
+
+		if psk := strings.TrimSpace(cfg["PreSharedKey"]); psk != "" {
+			v.Set("presharedkey", psk)
+		} else if psk := strings.TrimSpace(cfg["Psk"]); psk != "" {
+			v.Set("presharedkey", psk)
+		}
+
+		mtu := strings.TrimSpace(cfg["MTU"])
+		if mtu == "" {
+			mtu = strings.TrimSpace(cfg["Mtu"])
+		}
+		if mtu != "" {
+			v.Set("mtu", mtu)
+		}
+
+		if res := strings.TrimSpace(cfg["Reserved"]); res != "" {
+			v.Set("reserved", res)
+		}
+
+		// AWG obfuscation headers
+		for _, f := range []string{"jc", "jmin", "jmax", "s1", "s2", "h1", "h2", "h3", "h4"} {
+			if val := strings.TrimSpace(cfg[f]); val != "" {
+				v.Set(f, val)
+			} else if val := strings.TrimSpace(cfg[strings.ToUpper(f)]); val != "" {
+				v.Set(f, val)
+			} else if val := strings.TrimSpace(cfg[strings.Title(f)]); val != "" {
+				v.Set(f, val)
+			}
+		}
+
+		encodedQuery := v.Encode()
+		u := fmt.Sprintf("awg://%s@%s", url.PathEscape(secretKey), endpoint)
+		link = u
+		if encodedQuery != "" {
+			link += "?" + encodedQuery
+		}
+		if remark != "" {
+			link += "#" + url.PathEscape(remark)
+		}
+
 	default:
 		return "", fmt.Errorf("unsupported protocol: %s", proto)
+	}
+
+	if proto == "awg" || proto == "amneziawg" {
+		if _, _, err := wireguard.ParseLink(link); err != nil {
+			return "", fmt.Errorf("invalid amneziawg link: %w", err)
+		}
+		return link, nil
 	}
 
 	// Validate link using XRay Core
