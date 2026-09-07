@@ -16,3 +16,5 @@ func SaveAppDelegate() {}
 
 func RestoreAppDelegate() {}
 
+func SafeStartSystray() {}
+

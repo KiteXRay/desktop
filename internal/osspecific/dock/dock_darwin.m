@@ -2,6 +2,8 @@
 
 #import <Cocoa/Cocoa.h>
 
+extern void nativeStart(void);
+
 static id savedDelegate = nil;
 
 void SaveAppDelegate(void) {
@@ -25,5 +27,21 @@ void RestoreAppDelegate(void) {
                 [[NSApplication sharedApplication] setDelegate:savedDelegate];
             }
         });
+    }
+}
+
+void SafeStartSystray(void) {
+    void (^block)(void) = ^{
+        savedDelegate = [[NSApplication sharedApplication] delegate];
+        nativeStart();
+        if (savedDelegate != nil) {
+            [[NSApplication sharedApplication] setDelegate:savedDelegate];
+        }
+    };
+
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), block);
     }
 }

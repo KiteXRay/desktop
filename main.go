@@ -366,6 +366,10 @@ func setupSystray(app *App) *TrayController {
 		tc.stopTray = func() {
 			systray.Quit()
 		}
+	} else if runtime.GOOS == "darwin" {
+		_, end := systray.RunWithExternalLoop(onReady, onExit)
+		dock.SafeStartSystray()
+		tc.stopTray = end
 	} else {
 		dock.SaveAppDelegate()
 		start, end := systray.RunWithExternalLoop(onReady, onExit)

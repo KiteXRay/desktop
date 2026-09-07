@@ -8,8 +8,14 @@ package dock
 
 void SaveAppDelegate(void);
 void RestoreAppDelegate(void);
+void SafeStartSystray(void);
 */
 import "C"
+
+// SafeStartSystray runs systray nativeStart on Cocoa's main thread and preserves Wails's AppDelegate.
+func SafeStartSystray() {
+	C.SafeStartSystray()
+}
 
 // SaveAppDelegate stores Wails's NSApplicationDelegate before third-party libraries (like systray) run.
 func SaveAppDelegate() {
