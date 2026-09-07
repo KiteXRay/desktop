@@ -20,10 +20,7 @@ var (
 
 func init() {
 	AppLogo = ReadFile("assets/app.png")
-	if runtime.GOOS == "darwin" {
-		LogoPassive = ReadFile("assets/icon_default.svg")
-		LogoActive = ReadFile("assets/icon_active.svg")
-	} else if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" {
 		LogoPassive = ReadFile("assets/icon_default.ico")
 		LogoActive = ReadFile("assets/icon_active.ico")
 	} else {

@@ -16,3 +16,9 @@ func SaveAppDelegate() {}
 
 func RestoreAppDelegate() {}
 
+func RunOnMainThread(fn func()) {
+	if fn != nil {
+		fn()
+	}
+}
+

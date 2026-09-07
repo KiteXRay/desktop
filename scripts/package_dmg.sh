@@ -50,18 +50,16 @@ if [ -f "${ROOT_DIR}/build/darwin/iconfile.icns" ]; then
     cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${RESOURCES_DIR}/appicon.icns"
 fi
 
-# Ensure executable has execute permissions
+# Ensure executable has execute permissions and proper bundle permissions
+chmod -R 755 "${APP_PATH}"
 if [ -d "${APP_PATH}/Contents/MacOS" ]; then
     chmod +x "${APP_PATH}/Contents/MacOS"/* || true
 fi
 
-# Re-sign the application bundle so that modified resources are sealed in CodeResources
+# Re-sign the application bundle cleanly so that all resources are sealed with the bundle identifier
 if command -v codesign >/dev/null 2>&1; then
-    echo "==> Re-signing ${APP_PATH} with ad-hoc signature..."
-    if [ -d "${APP_PATH}/Contents/MacOS" ]; then
-        codesign --force --sign - "${APP_PATH}/Contents/MacOS"/* || true
-    fi
-    codesign --force --deep --sign - "${APP_PATH}" || true
+    echo "==> Re-signing ${APP_PATH} with ad-hoc signature (identifier: com.kite.desktop)..."
+    codesign --force --deep -i com.kite.desktop --sign - "${APP_PATH}" || true
     echo "==> Verifying code signature..."
     codesign --verify --verbose=2 "${APP_PATH}" || true
 fi
@@ -76,6 +74,12 @@ if command -v ditto >/dev/null 2>&1; then
     ditto "${APP_PATH}" "${DMG_STAGING}/Kite.app"
 else
     cp -R "${APP_PATH}" "${DMG_STAGING}/"
+fi
+
+# Explicitly ensure executable and bundle permissions in staging
+chmod -R 755 "${DMG_STAGING}/Kite.app"
+if [ -d "${DMG_STAGING}/Kite.app/Contents/MacOS" ]; then
+    chmod +x "${DMG_STAGING}/Kite.app/Contents/MacOS"/* || true
 fi
 
 # Add standard drag-and-drop link to /Applications
@@ -135,10 +139,6 @@ fi
 rm -rf "${DMG_STAGING}"
 
 if [ -f "${OUTPUT_DMG}" ]; then
-    if command -v codesign >/dev/null 2>&1; then
-        echo "==> Signing disk image container..."
-        codesign --force --sign - "${OUTPUT_DMG}" || true
-    fi
     echo "✓ Successfully created DMG: ${OUTPUT_DMG}"
     ls -lh "${OUTPUT_DMG}"
 else

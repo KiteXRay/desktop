@@ -168,6 +168,24 @@ jobs:
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 
+      - name: Generate Native macOS ICNS Icons
+        run: |
+          mkdir -p build/icon.iconset
+          sips -z 16 16     build/appicon.png --out build/icon.iconset/icon_16x16.png
+          sips -z 32 32     build/appicon.png --out build/icon.iconset/icon_16x16@2x.png
+          sips -z 32 32     build/appicon.png --out build/icon.iconset/icon_32x32.png
+          sips -z 64 64     build/appicon.png --out build/icon.iconset/icon_32x32@2x.png
+          sips -z 128 128   build/appicon.png --out build/icon.iconset/icon_128x128.png
+          sips -z 256 256   build/appicon.png --out build/icon.iconset/icon_128x128@2x.png
+          sips -z 256 256   build/appicon.png --out build/icon.iconset/icon_256x256.png
+          sips -z 512 512   build/appicon.png --out build/icon.iconset/icon_256x256@2x.png
+          sips -z 512 512   build/appicon.png --out build/icon.iconset/icon_512x512.png
+          sips -z 1024 1024 build/appicon.png --out build/icon.iconset/icon_512x512@2x.png
+          iconutil -c icns build/icon.iconset -o build/darwin/iconfile.icns
+          cp build/darwin/iconfile.icns build/darwin/icon.icns
+          cp build/darwin/iconfile.icns build/darwin/icons.icns
+          rm -rf build/icon.iconset
+
       - name: Build Application
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
