@@ -62,6 +62,15 @@ func TestSelectAsset(t *testing.T) {
 		t.Errorf("expected macos asset, got %v", macAsset)
 	}
 
+	macAssetsWithDMG := []GitHubReleaseAsset{
+		{Name: "kite-macos-universal.zip", BrowserDownloadURL: "https://example.com/kite-macos-universal.zip"},
+		{Name: "kite-macos-universal.dmg", BrowserDownloadURL: "https://example.com/kite-macos-universal.dmg"},
+	}
+	macDMGAsset := SelectAsset(macAssetsWithDMG, "darwin", "arm64")
+	if macDMGAsset == nil || macDMGAsset.Name != "kite-macos-universal.dmg" {
+		t.Errorf("expected macos dmg asset, got %v", macDMGAsset)
+	}
+
 	// Test Debian preference for .deb
 	origIsDebian := isDebian
 	defer func() { isDebian = origIsDebian }()

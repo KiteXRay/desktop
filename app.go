@@ -342,27 +342,30 @@ func (a *App) Connect(id string) error {
 		return a.Disconnect()
 	}
 
-	// Pre-check network privileges to prevent crashes and alert the user
-	if has, err := root.HasNetworkPrivileges(); !has {
-		_, fixCmd := root.GetPrivilegeFixCommand()
-		errMsg := fmt.Sprintf("Missing network privileges. Please run: %s", fixCmd)
-		if err != nil {
-			errMsg = fmt.Sprintf("Missing network privileges (%s). Run: %s", err.Error(), fixCmd)
+	// Pre-check network privileges for TUN-based modes to prevent crashes and alert the user
+	currentMode := a.GetTunnelMode()
+	if currentMode != "proxy" {
+		if has, err := root.HasNetworkPrivileges(); !has {
+			_, fixCmd := root.GetPrivilegeFixCommand()
+			errMsg := fmt.Sprintf("Missing network privileges for %s mode. Please run: %s", currentMode, fixCmd)
+			if err != nil {
+				errMsg = fmt.Sprintf("Missing network privileges (%s). Run: %s", err.Error(), fixCmd)
+			}
+			slog.Error("cannot connect due to missing network privileges", "error", err, "command", fixCmd)
+			if a.ctx != nil {
+				wruntime.EventsEmit(a.ctx, "network:privileges_required", map[string]any{
+					"error":   errMsg,
+					"command": fixCmd,
+				})
+				wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
+					"status":  "error",
+					"id":      id,
+					"error":   errMsg,
+					"command": fixCmd,
+				})
+			}
+			return errors.New(errMsg)
 		}
-		slog.Error("cannot connect due to missing network privileges", "error", err, "command", fixCmd)
-		if a.ctx != nil {
-			wruntime.EventsEmit(a.ctx, "network:privileges_required", map[string]any{
-				"error":   errMsg,
-				"command": fixCmd,
-			})
-			wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
-				"status":  "error",
-				"id":      id,
-				"error":   errMsg,
-				"command": fixCmd,
-			})
-		}
-		return errors.New(errMsg)
 	}
 
 	return a.connectInternal(id)
@@ -601,7 +604,14 @@ func (a *App) GetAppInfo() AppInfoDTO {
 }
 
 func (a *App) CheckNetworkPrivileges() NetworkPrivilegesDTO {
-	has, err := root.HasNetworkPrivileges()
+	currentMode := a.GetTunnelMode()
+	var has bool
+	var err error
+	if currentMode == "proxy" {
+		has = true
+	} else {
+		has, err = root.HasNetworkPrivileges()
+	}
 	exePath, cmd := root.GetPrivilegeFixCommand()
 	errStr := ""
 	if err != nil {
@@ -1050,6 +1060,34 @@ func (a *App) SetTunnelMode(mode string) error {
 				tMode = client.TunnelModeBridge
 			default:
 				tMode = client.TunnelModeTunnel
+			}
+			if tMode != client.TunnelModeProxy {
+				if has, err := root.HasNetworkPrivileges(); !has {
+					_, fixCmd := root.GetPrivilegeFixCommand()
+					errMsg := fmt.Sprintf("Missing network privileges for %s mode. Please run: %s", mode, fixCmd)
+					if err != nil {
+						errMsg = fmt.Sprintf("Missing network privileges (%s). Run: %s", err.Error(), fixCmd)
+					}
+					slog.Error("cannot switch mode due to missing network privileges", "error", err, "command", fixCmd)
+					item.SetActive(false)
+					a.SetActiveID("")
+					if a.onTrayUpdate != nil {
+						a.onTrayUpdate()
+					}
+					if a.ctx != nil {
+						wruntime.EventsEmit(a.ctx, "network:privileges_required", map[string]any{
+							"error":   errMsg,
+							"command": fixCmd,
+						})
+						wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
+							"status":  "error",
+							"id":      activeID,
+							"error":   errMsg,
+							"command": fixCmd,
+						})
+					}
+					return errors.New(errMsg)
+				}
 			}
 			if tMode == client.TunnelModeBridge {
 				item.SetBridgeDialerFactory(func(defaultSocksAddr string) tproxy.Dialer {

@@ -168,8 +168,15 @@ jobs:
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
           wails build -platform darwin/universal -skipbindings -ldflags "-X main.appVersion=${VERSION}"
 
-      - name: Package Release
+      - name: Install create-dmg
         run: |
+          brew install create-dmg || true
+
+      - name: Package Release (.dmg and .zip)
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
+          ./scripts/package_dmg.sh "${VERSION}" "universal"
           cd build/bin
           if [ -d "Kite.app" ]; then
             zip -r ../../kite-macos-universal.zip Kite.app
@@ -178,15 +185,17 @@ jobs:
           else
             zip -r ../../kite-macos-universal.zip *.app
           fi
+          cp kite-macos-universal.dmg ../../ || true
 
       - name: Generate Checksums
         run: |
-          shasum -a 256 kite-macos-universal.zip > checksums-macos.txt
+          shasum -a 256 kite-macos-universal.dmg kite-macos-universal.zip > checksums-macos.txt
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
+            kite-macos-universal.dmg
             kite-macos-universal.zip
             checksums-macos.txt

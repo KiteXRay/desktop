@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -64,9 +65,14 @@ func NewSaveFileWithPath(path string) *SaveFile {
 	dir := filepath.Dir(path)
 	_ = os.MkdirAll(dir, 0755)
 
+	defaultMode := "tunnel"
+	if runtime.GOOS == "darwin" {
+		defaultMode = "proxy"
+	}
+
 	return &SaveFile{
 		filePath:       path,
-		tunnelMode:     "tunnel",
+		tunnelMode:     defaultMode,
 		tunnelDeviceIP: "192.18.0.1",
 		tunnelDNS:      "8.8.8.8",
 		subscriptions:  make([]subscription.Subscription, 0),

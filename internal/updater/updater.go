@@ -232,7 +232,9 @@ func SelectAsset(assets []GitHubReleaseAsset, goos, goarch string) *GitHubReleas
 			if strings.Contains(name, "universal") || strings.Contains(name, goarch) {
 				score += 5
 			}
-			if strings.HasSuffix(name, ".dmg") || strings.HasSuffix(name, ".zip") {
+			if strings.HasSuffix(name, ".dmg") {
+				score += 20 // prefer installer / DMG image over raw zip
+			} else if strings.HasSuffix(name, ".zip") {
 				score += 5
 			}
 		}

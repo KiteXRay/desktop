@@ -1,3 +1,5 @@
+//go:build darwin && cgo
+
 package dock
 
 /*
@@ -15,7 +17,7 @@ SetActivationPolicy(void) {
 import "C"
 
 func HideIconInDock() {
-	C.SetActivationPolicy()
+	// Do not hide the app icon from the macOS Dock
 }
 
 func SetWindowIconFromPNG(pngBytes []byte) {}

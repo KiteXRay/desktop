@@ -62,7 +62,7 @@ It delivers seamless, low-overhead system-wide tunneling, system proxying, and g
 |---|---|---|
 | **Linux** | Ubuntu 22.04+, Debian 12+, Arch, Fedora, Mint (amd64, arm64) | Native Linux TUN (`kite0`) |
 | **Windows** | Windows 10, Windows 11 (64-bit) | Wintun driver (`kite0`) |
-| **macOS** | macOS Monterey (12) through Sequoia (15+) (Apple Silicon & Intel) | utun device |
+| **macOS** | macOS Monterey (12) through Tahoe (26+) (Apple Silicon & Intel) | Native System Proxy / utun |
 
 ---
 
@@ -99,13 +99,13 @@ It delivers seamless, low-overhead system-wide tunneling, system proxying, and g
 
 ### macOS
 
-1. Download `Kite.dmg` or `Kite.app.zip` from [Releases](https://github.com/KiteXRay/desktop/releases).
-2. Drag `Kite.app` to your `/Applications` folder.
-3. If macOS displays a "damaged application" warning due to Gatekeeper quarantine:
+1. Download `kite-macos-universal.dmg` from [Releases](https://github.com/KiteXRay/desktop/releases).
+2. Open the disk image and drag `Kite.app` to your `/Applications` folder.
+3. If macOS displays an unidentified developer / Gatekeeper quarantine warning:
    ```bash
    xattr -cr /Applications/Kite.app
    ```
-4. Run Kite. You will be prompted once for administrator privileges to configure the network extension/utun device.
+4. Launch Kite. Kite runs smoothly as a standard desktop application and defaults to **Proxy Mode** (native macOS system proxy via `networksetup`), working immediately out of the box with zero password prompts.
 
 ---
 
@@ -131,6 +131,10 @@ sudo apt install -y build-essential libgtk-3-dev libwebkit2gtk-4.1-dev
 - [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on Windows 10/11)
 - [NSIS](https://nsis.sourceforge.io/) or [Inno Setup 6](https://jrsoftware.org/isdl.php) (optional, to build Windows installer `.exe`)
 
+#### macOS Prerequisites
+- Xcode Command Line Tools (`xcode-select --install`)
+- [create-dmg](https://github.com/create-dmg/create-dmg) (optional, `brew install create-dmg` to generate drag-and-drop `.dmg` installers)
+
 ---
 
 ### Build Commands
@@ -153,11 +157,14 @@ wails build -platform windows/amd64
 makensis build/windows/installer/project.nsi
 # or: iscc build/windows/installer/kite.iss
 
-# 4. Build for macOS
+# 4. Build for macOS (Universal App Bundle & .dmg Disk Image)
+./scripts/macos_bundle.sh
+# Or manually:
 wails build -platform darwin/universal
+./scripts/package_dmg.sh
 ```
 
-Output binary is generated in `build/bin/`.
+Output binaries and disk images are generated in `build/bin/`.
 
 ---
 
