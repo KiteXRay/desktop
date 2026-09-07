@@ -866,6 +866,11 @@ func (a *App) InstallUpdate(assetURL, releaseURL string) error {
 		if a.latestRelease != nil && (a.latestRelease.AssetURL == assetURL || a.latestRelease.AssetName == baseName) {
 			expectedSHA = a.latestRelease.ExpectedSHA
 		}
+		if expectedSHA == "" {
+			if sha, errFetch := updater.FetchAssetChecksum(ctx, a.GetAppInfo().RepoURL, baseName); errFetch == nil && sha != "" {
+				expectedSHA = sha
+			}
+		}
 		a.updateMu.Unlock()
 		defer cancel()
 

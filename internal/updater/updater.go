@@ -31,6 +31,7 @@ type GitHubReleaseAsset struct {
 	BrowserDownloadURL string `json:"browser_download_url"`
 	Size               int64  `json:"size"`
 	ContentType        string `json:"content_type"`
+	Digest             string `json:"digest"`
 }
 
 type GitHubRelease struct {
@@ -288,6 +289,20 @@ func ParseExpectedChecksum(content, targetAssetName string) string {
 	return ""
 }
 
+// ParseAssetDigest extracts a 64-character lowercase SHA256 hex string from
+// GitHub's asset digest field (e.g., "sha256:<hash>" or raw "<hash>").
+func ParseAssetDigest(digest string) string {
+	digest = strings.TrimSpace(digest)
+	if strings.HasPrefix(strings.ToLower(digest), "sha256:") {
+		digest = digest[7:]
+	}
+	digest = strings.TrimSpace(digest)
+	if len(digest) == 64 {
+		return strings.ToLower(digest)
+	}
+	return ""
+}
+
 func VerifyFileSHA256(filePath, expectedSHA string) error {
 	expectedSHA = strings.ToLower(strings.TrimSpace(expectedSHA))
 	if expectedSHA == "" {
@@ -309,6 +324,64 @@ func VerifyFileSHA256(filePath, expectedSHA string) error {
 		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedSHA, actualSHA)
 	}
 	return nil
+}
+
+// FetchAssetChecksum fetches the expected SHA256 checksum for an asset from GitHub Releases API.
+func FetchAssetChecksum(ctx context.Context, repo, assetName string) (string, error) {
+	repoPath := strings.TrimPrefix(repo, "https://github.com/")
+	repoPath = strings.TrimPrefix(repoPath, "http://github.com/")
+	repoPath = strings.TrimSuffix(repoPath, ".git")
+	repoPath = strings.Trim(repoPath, "/")
+	if repoPath == "" {
+		repoPath = "KiteXRay/desktop"
+	}
+
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repoPath)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "Kite-Desktop-Updater")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("github api returned status %d", resp.StatusCode)
+	}
+
+	var rel GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return "", err
+	}
+
+	baseTarget := filepath.Base(assetName)
+	for _, asset := range rel.Assets {
+		if strings.EqualFold(asset.Name, baseTarget) {
+			if expected := ParseAssetDigest(asset.Digest); expected != "" {
+				return expected, nil
+			}
+		}
+	}
+
+	if chkAsset := FindChecksumAsset(rel.Assets, baseTarget); chkAsset != nil {
+		chkReq, errChk := http.NewRequestWithContext(ctx, "GET", chkAsset.BrowserDownloadURL, nil)
+		if errChk == nil {
+			chkReq.Header.Set("User-Agent", "Kite-Desktop-Updater")
+			if chkResp, errDo := client.Do(chkReq); errDo == nil && chkResp.StatusCode == http.StatusOK {
+				chkBytes, _ := io.ReadAll(io.LimitReader(chkResp.Body, 64*1024))
+				chkResp.Body.Close()
+				return ParseExpectedChecksum(string(chkBytes), baseTarget), nil
+			}
+		}
+	}
+
+	return "", nil
 }
 
 func CheckForUpdate(ctx context.Context, repo string, currentVersion string) (*ReleaseInfo, error) {
@@ -407,7 +480,10 @@ func CheckForUpdate(ctx context.Context, repo string, currentVersion string) (*R
 		info.AssetName = matchedAsset.Name
 		info.AssetSize = matchedAsset.Size
 
-		if chkAsset := FindChecksumAsset(rel.Assets, matchedAsset.Name); chkAsset != nil {
+		// Primary: GitHub Releases API asset digest
+		if expected := ParseAssetDigest(matchedAsset.Digest); expected != "" {
+			info.ExpectedSHA = expected
+		} else if chkAsset := FindChecksumAsset(rel.Assets, matchedAsset.Name); chkAsset != nil {
 			info.ChecksumURL = chkAsset.BrowserDownloadURL
 			chkReq, errChk := http.NewRequestWithContext(ctx, "GET", chkAsset.BrowserDownloadURL, nil)
 			if errChk == nil {
@@ -893,6 +969,75 @@ fi
 			}
 			_ = exec.Command("open", "-n", targetApp).Start()
 			os.Exit(0)
+			return nil
+		}
+
+		if strings.HasSuffix(downloadedFilePath, ".dmg") {
+			mountPoint, err := os.MkdirTemp("", "kite_dmg_mount_*")
+			if err != nil {
+				_ = exec.Command("open", downloadedFilePath).Start()
+				return nil
+			}
+			defer os.RemoveAll(mountPoint)
+
+			cmdAttach := exec.Command("hdiutil", "attach", downloadedFilePath, "-mountpoint", mountPoint, "-nobrowse", "-readonly")
+			if errAttach := cmdAttach.Run(); errAttach != nil {
+				_ = exec.Command("open", downloadedFilePath).Start()
+				return nil
+			}
+			defer func() {
+				_ = exec.Command("hdiutil", "detach", mountPoint, "-force").Run()
+			}()
+
+			appBundle := filepath.Join(mountPoint, "Kite.app")
+			if _, errStat := os.Stat(appBundle); errStat != nil {
+				entries, _ := os.ReadDir(mountPoint)
+				for _, e := range entries {
+					if strings.HasSuffix(e.Name(), ".app") {
+						appBundle = filepath.Join(mountPoint, e.Name())
+						break
+					}
+				}
+			}
+
+			if _, errStat := os.Stat(appBundle); errStat == nil {
+				currentExe, _ := os.Executable()
+				targetApp := findEnclosingAppBundle(currentExe)
+				if targetApp == "" {
+					targetApp = "/Applications/Kite.app"
+				}
+
+				slog.Info("Applying macOS update from DMG...", "source", appBundle, "target", targetApp)
+				var installErr error
+				testFile, errTest := os.CreateTemp(filepath.Dir(targetApp), ".write_test_*")
+				if errTest == nil {
+					_ = testFile.Close()
+					_ = os.Remove(testFile.Name())
+					cmd := exec.Command("ditto", appBundle, targetApp)
+					if out, errDitto := cmd.CombinedOutput(); errDitto != nil {
+						installErr = fmt.Errorf("ditto copy failed: %s (%w)", string(out), errDitto)
+					}
+				} else {
+					script := fmt.Sprintf(`do shell script "ditto %q %q" with administrator privileges`, appBundle, targetApp)
+					cmd := exec.Command("osascript", "-e", script)
+					if out, errOSA := cmd.CombinedOutput(); errOSA != nil {
+						installErr = fmt.Errorf("osascript admin install failed: %s (%w)", string(out), errOSA)
+					}
+				}
+
+				if installErr == nil {
+					slog.Info("macOS update from DMG applied, relaunching application...", "app", targetApp)
+					if onPreQuit != nil {
+						onPreQuit()
+					}
+					_ = exec.Command("open", "-n", targetApp).Start()
+					os.Exit(0)
+					return nil
+				}
+				slog.Warn("Automated DMG install failed, falling back to opening DMG in Finder", "error", installErr)
+			}
+
+			_ = exec.Command("open", downloadedFilePath).Start()
 			return nil
 		}
 

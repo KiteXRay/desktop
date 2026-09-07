@@ -113,22 +113,12 @@ jobs:
           if (-not $ver -or $ver -eq "main") { $ver = "1.1.0" }
           wails build -platform windows/amd64 -nsis -skipbindings -ldflags "-X main.appVersion=$ver"
 
-      - name: Package Portable Zip
-        shell: bash
-        run: |
-          mkdir -p release-win
-          cp build/bin/kite.exe release-win/
-          cp build/windows/wintun.dll release-win/
-          cp README.md LICENSE release-win/
-          cd release-win && 7z a -tzip ../kite-windows-amd64.zip *
-
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
             build/bin/*installer.exe
-            kite-windows-amd64.zip
 
   release-macos:
     name: Build macOS (universal)
@@ -161,20 +151,12 @@ jobs:
         run: |
           brew install create-dmg || true
 
-      - name: Package Release (.dmg and .zip)
+      - name: Package Release (.dmg)
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
           ./scripts/package_dmg.sh "${VERSION}" "universal"
-          cd build/bin
-          if [ -d "Kite.app" ]; then
-            ditto -c -k --keepParent Kite.app ../../kite-macos-universal.zip
-          elif [ -d "kite.app" ]; then
-            ditto -c -k --keepParent kite.app ../../kite-macos-universal.zip
-          else
-            ditto -c -k --keepParent *.app ../../kite-macos-universal.zip
-          fi
-          cp kite-macos-universal.dmg ../../ || true
+          cp build/bin/kite-macos-universal.dmg ./ || true
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
@@ -182,4 +164,3 @@ jobs:
         with:
           files: |
             kite-macos-universal.dmg
-            kite-macos-universal.zip

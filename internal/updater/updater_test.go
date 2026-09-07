@@ -153,3 +153,42 @@ func TestVerifyFileSHA256(t *testing.T) {
 	}
 }
 
+func TestParseAssetDigest(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{
+			input:    "sha256:698c8d88cc19cc92bfe96bad58d10b2a5b274c52433d6dc57799c81f6139d5fc",
+			expected: "698c8d88cc19cc92bfe96bad58d10b2a5b274c52433d6dc57799c81f6139d5fc",
+		},
+		{
+			input:    "SHA256:698C8D88CC19CC92BFE96BAD58D10B2A5B274C52433D6DC57799C81F6139D5FC",
+			expected: "698c8d88cc19cc92bfe96bad58d10b2a5b274c52433d6dc57799c81f6139d5fc",
+		},
+		{
+			input:    "698c8d88cc19cc92bfe96bad58d10b2a5b274c52433d6dc57799c81f6139d5fc",
+			expected: "698c8d88cc19cc92bfe96bad58d10b2a5b274c52433d6dc57799c81f6139d5fc",
+		},
+		{
+			input:    "",
+			expected: "",
+		},
+		{
+			input:    "invalid",
+			expected: "",
+		},
+		{
+			input:    "sha256:short",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		got := ParseAssetDigest(tt.input)
+		if got != tt.expected {
+			t.Errorf("ParseAssetDigest(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
