@@ -19,6 +19,8 @@
         <string>{{.Info.ProductVersion}}</string>
         <key>CFBundleIconFile</key>
         <string>iconfile</string>
+        <key>CFBundleIconName</key>
+        <string>iconfile</string>
         <key>LSMinimumSystemVersion</key>
         <string>10.15.0</string>
         <key>NSHighResolutionCapable</key>

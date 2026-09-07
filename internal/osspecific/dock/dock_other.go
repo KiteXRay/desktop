@@ -12,3 +12,7 @@ func HideIconInDock() {
 
 func SetWindowIconFromPNG(pngBytes []byte) {}
 
+func SaveAppDelegate() {}
+
+func RestoreAppDelegate() {}
+

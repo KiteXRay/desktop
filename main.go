@@ -367,8 +367,10 @@ func setupSystray(app *App) *TrayController {
 			systray.Quit()
 		}
 	} else {
+		dock.SaveAppDelegate()
 		start, end := systray.RunWithExternalLoop(onReady, onExit)
 		start()
+		dock.RestoreAppDelegate()
 		tc.stopTray = end
 	}
 
@@ -420,6 +422,8 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			tc = setupSystray(app)
 			app.startup(ctx)
+			wruntime.WindowShow(ctx)
+			wruntime.WindowUnminimise(ctx)
 		},
 		OnShutdown: func(ctx context.Context) {
 			if tc != nil && tc.stopTray != nil {

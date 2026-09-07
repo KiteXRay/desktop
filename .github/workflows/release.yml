@@ -179,11 +179,11 @@ jobs:
           ./scripts/package_dmg.sh "${VERSION}" "universal"
           cd build/bin
           if [ -d "Kite.app" ]; then
-            zip -r ../../kite-macos-universal.zip Kite.app
+            ditto -c -k --keepParent Kite.app ../../kite-macos-universal.zip
           elif [ -d "kite.app" ]; then
-            zip -r ../../kite-macos-universal.zip kite.app
+            ditto -c -k --keepParent kite.app ../../kite-macos-universal.zip
           else
-            zip -r ../../kite-macos-universal.zip *.app
+            ditto -c -k --keepParent *.app ../../kite-macos-universal.zip
           fi
           cp kite-macos-universal.dmg ../../ || true
 

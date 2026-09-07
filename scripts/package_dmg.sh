@@ -47,6 +47,7 @@ mkdir -p "${RESOURCES_DIR}"
 if [ -f "${ROOT_DIR}/build/darwin/iconfile.icns" ]; then
     cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${RESOURCES_DIR}/iconfile.icns"
     cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${RESOURCES_DIR}/icon.icns"
+    cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${RESOURCES_DIR}/appicon.icns"
 fi
 
 # Ensure executable has execute permissions
@@ -54,13 +55,25 @@ if [ -d "${APP_PATH}/Contents/MacOS" ]; then
     chmod +x "${APP_PATH}/Contents/MacOS"/* || true
 fi
 
+# Re-sign the application bundle so that modified resources are sealed in CodeResources
+if command -v codesign >/dev/null 2>&1; then
+    echo "==> Re-signing ${APP_PATH} with ad-hoc signature..."
+    codesign --force --deep --sign - "${APP_PATH}"
+    echo "==> Verifying code signature..."
+    codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
+fi
+
 # Prepare staging directory for DMG
 DMG_STAGING="${ROOT_DIR}/build/dmg_staging"
 rm -rf "${DMG_STAGING}" "${OUTPUT_DMG}"
 mkdir -p "${DMG_STAGING}"
 
-# Copy Kite.app into staging
-cp -R "${APP_PATH}" "${DMG_STAGING}/"
+# Copy Kite.app into staging (ditto preserves extended attributes, resource forks, and signatures)
+if command -v ditto >/dev/null 2>&1; then
+    ditto "${APP_PATH}" "${DMG_STAGING}/Kite.app"
+else
+    cp -R "${APP_PATH}" "${DMG_STAGING}/"
+fi
 
 # Add standard drag-and-drop link to /Applications
 ln -s /Applications "${DMG_STAGING}/Applications"
@@ -68,6 +81,9 @@ ln -s /Applications "${DMG_STAGING}/Applications"
 # Set volume icon if available
 if [ -f "${ROOT_DIR}/build/darwin/iconfile.icns" ]; then
     cp "${ROOT_DIR}/build/darwin/iconfile.icns" "${DMG_STAGING}/.VolumeIcon.icns"
+fi
+if command -v SetFile >/dev/null 2>&1; then
+    SetFile -a C "${DMG_STAGING}" || true
 fi
 
 echo "==> Generating disk image ${OUTPUT_DMG}..."
@@ -116,6 +132,10 @@ fi
 rm -rf "${DMG_STAGING}"
 
 if [ -f "${OUTPUT_DMG}" ]; then
+    if command -v codesign >/dev/null 2>&1; then
+        echo "==> Signing disk image container..."
+        codesign --force --sign - "${OUTPUT_DMG}" || true
+    fi
     echo "✓ Successfully created DMG: ${OUTPUT_DMG}"
     ls -lh "${OUTPUT_DMG}"
 else
