@@ -41,6 +41,9 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
           wails build -tags webkit2_41 -skipbindings -ldflags "-X main.appVersion=${VERSION}"
+          if [ -f build/bin/Kite ] && [ ! -f build/bin/kite ]; then
+            cp build/bin/Kite build/bin/kite
+          fi
 
       - name: Package Release Archive
         run: |

@@ -8,6 +8,10 @@ VERSION="${1:-1.1.0}"
 VERSION="${VERSION#v}" # remove leading 'v'
 ARCH="${2:-amd64}"
 
+if [ -f "$ROOT_DIR/build/bin/Kite" ] && [ ! -f "$ROOT_DIR/build/bin/kite" ]; then
+    cp "$ROOT_DIR/build/bin/Kite" "$ROOT_DIR/build/bin/kite"
+fi
+
 KITE_BIN="$ROOT_DIR/build/bin/kite"
 if [ ! -f "$KITE_BIN" ]; then
     echo "Error: $KITE_BIN not found. Run 'wails build -tags webkit2_41' first." >&2
