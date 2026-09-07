@@ -57,9 +57,9 @@ fi
 
 # Re-sign the application bundle so that modified resources are sealed in CodeResources
 if command -v codesign >/dev/null 2>&1; then
-    echo "==> Stripping stale Go linker signatures from binary..."
-    codesign --remove-signature "${APP_PATH}/Contents/MacOS"/* 2>/dev/null || true
-    echo "==> Re-signing ${APP_PATH} with ad-hoc signature..."
+    echo "==> Signing binary executable..."
+    codesign --force --sign - "${APP_PATH}/Contents/MacOS"/*
+    echo "==> Signing application bundle..."
     codesign --force --sign - "${APP_PATH}"
     echo "==> Verifying code signature..."
     codesign --verify --verbose=2 "${APP_PATH}"

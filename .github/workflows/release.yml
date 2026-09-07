@@ -60,6 +60,12 @@ jobs:
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
           ./scripts/package_deb.sh "$VERSION" amd64
 
+      - name: Clean Stale Release Assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete-asset "$GITHUB_REF_NAME" checksums-linux.txt checksums-macos.txt checksums-windows.txt -y 2>/dev/null || true
+
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
@@ -112,13 +118,27 @@ jobs:
           $ver = "${env:GITHUB_REF_NAME}".TrimStart("v")
           if (-not $ver -or $ver -eq "main") { $ver = "1.1.0" }
           wails build -platform windows/amd64 -nsis -skipbindings -ldflags "-X main.appVersion=$ver"
+          $inst = Get-ChildItem -Path "build\bin" -Filter "*installer.exe" | Select-Object -First 1
+          if ($inst) {
+            $dest = Join-Path "build\bin" "kite-amd64-installer.exe"
+            if ($inst.FullName -ne $dest) {
+              Move-Item -Force $inst.FullName $dest
+            }
+          }
+
+      - name: Clean Stale Windows Assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete-asset "$GITHUB_REF_NAME" Kite-amd64-installer.exe kite-windows-amd64.zip -y 2>/dev/null || true
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            build/bin/*installer.exe
+            build/bin/kite-amd64-installer.exe
 
   release-macos:
     name: Build macOS (universal)
@@ -157,6 +177,12 @@ jobs:
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
           ./scripts/package_dmg.sh "${VERSION}" "universal"
           cp build/bin/kite-macos-universal.dmg ./ || true
+
+      - name: Clean Stale macOS Assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete-asset "$GITHUB_REF_NAME" kite-macos-universal.zip -y 2>/dev/null || true
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
