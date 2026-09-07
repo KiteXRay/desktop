@@ -60,10 +60,6 @@ jobs:
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.1.0"; fi
           ./scripts/package_deb.sh "$VERSION" amd64
 
-      - name: Generate Checksums
-        run: |
-          sha256sum kite-linux-amd64.tar.gz build/bin/*.deb > checksums-linux.txt
-
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
@@ -72,7 +68,6 @@ jobs:
           files: |
             kite-linux-amd64.tar.gz
             build/bin/*.deb
-            checksums-linux.txt
 
   release-windows:
     name: Build Windows (amd64)
@@ -127,11 +122,6 @@ jobs:
           cp README.md LICENSE release-win/
           cd release-win && 7z a -tzip ../kite-windows-amd64.zip *
 
-      - name: Generate Checksums
-        shell: bash
-        run: |
-          sha256sum build/bin/*installer.exe kite-windows-amd64.zip > checksums-windows.txt
-
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
@@ -139,7 +129,6 @@ jobs:
           files: |
             build/bin/*installer.exe
             kite-windows-amd64.zip
-            checksums-windows.txt
 
   release-macos:
     name: Build macOS (universal)
@@ -187,10 +176,6 @@ jobs:
           fi
           cp kite-macos-universal.dmg ../../ || true
 
-      - name: Generate Checksums
-        run: |
-          shasum -a 256 kite-macos-universal.dmg kite-macos-universal.zip > checksums-macos.txt
-
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
@@ -198,4 +183,3 @@ jobs:
           files: |
             kite-macos-universal.dmg
             kite-macos-universal.zip
-            checksums-macos.txt
