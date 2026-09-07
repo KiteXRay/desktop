@@ -1,48 +1,58 @@
 # <img width="28px" src="icon/assets/app.png" alt="Kite logo" align="center"> Kite: Transparent Desktop VPN Client for Xray
 
 ![OS - Linux | Windows | macOS](https://img.shields.io/badge/OS-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat&logo=linux&logoColor=white)
-![Go - 1.21+](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white&logo=go)
+![Go - 1.21+](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white)
 ![Frontend - React 19 + TailwindCSS](https://img.shields.io/badge/Frontend-React%2019%20%7C%20TailwindCSS-61DAFB?style=flat&logo=react&logoColor=white)
+[![Latest Release](https://img.shields.io/github/v/release/KiteXRay/desktop?color=blue)](https://github.com/KiteXRay/desktop/releases)
 [![Go Report Card](https://goreportcard.com/badge/github.com/KiteXRay/desktop)](https://goreportcard.com/report/github.com/KiteXRay/desktop)
 ![GitHub Downloads](https://img.shields.io/github/downloads/KiteXRay/desktop/total?color=blue)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**Kite** is a fast, transparent, and modern desktop VPN client for [Xray-core](https://github.com/XTLS/Xray-core), built with **Go**, **React 19**, **Tailwind CSS**, and [Wails v2](https://wails.io).
+**Kite** is a fast, transparent, and lightweight desktop VPN client for [Xray-core](https://github.com/XTLS/Xray-core), built with **Go**, **React 19**, **Tailwind CSS**, and [Wails v2](https://wails.io).
 
-It delivers seamless, low-overhead system-wide and per-application tunneling across **Linux**, **Windows**, and **macOS** with a clean, dark-mode native interface.
+It delivers seamless, low-overhead system-wide tunneling, system proxying, and granular per-application routing across **Linux**, **Windows**, and **macOS** with a clean, dark-mode native interface.
 
 > [!NOTE]
-> Kite uses dedicated TUN devices (`kite0` / Wintun) and applies soft routing rules. Your default routing table and DNS settings remain intact and are safely restored upon disconnection or app shutdown.
-
-| macOS (15.1) Light  | Linux (Ubuntu) Dark |
-| ------------- | ------------- |
-| <img alt="" src=".github/images/overview_screenshot.png"> | <img alt="" src=".github/images/overview_screenshot_linux.jpg">  |
+> Kite utilizes dedicated TUN devices (`kite0` / Wintun / utun) and applies soft routing rules. Your default routing table and DNS settings remain intact and are safely restored upon disconnection or app shutdown.
 
 ---
 
 ## ✨ Features
 
-- 🚀 **Full Xray Protocol Support**: Native support for `VLESS`, `VMess`, `Trojan`, and `Shadowsocks` configs with `Reality`, `TLS`, `gRPC`, `WebSocket`, and `xtls-rprx-vision`.
-- 🌐 **Dual Tunneling Modes**:
-  - **System Mode**: Full transparent system-wide VPN tunnel routing all OS traffic through Xray.
-  - **App Mode (Split Tunneling)**: Run individual applications isolated through the VPN proxy without intercepting the rest of your system traffic.
-- 🔍 **App Discovery with Icons**: Automatic installed application scanning on both **Linux** (XDG desktop entries & system theme icons) and **Windows** (Registry and Start Menu with extracted high-resolution PE/ICO icons).
-- 📝 **Visual Profile Form & Raw Link Editor**:
-  - Edit every parsed protocol parameter separately with a structured form (Address, Port, UUID/Key, SNI, ShortId, Flow, Fingerprint, Header paths).
-  - One-click toggle between structured form mode and raw connection URL mode (`vless://...`).
+- 🚀 **Full Xray Protocol Support**: Native support for `VLESS`, `VMess`, `Trojan`, and `Shadowsocks` configs with `Reality`, `TLS`, `gRPC`, `WebSocket`, `TCP`, `HTTP/2`, and `xtls-rprx-vision`.
+- 🌐 **Triple Routing Modes**:
+  - **Tunnel Mode (System-wide VPN)**: Full transparent system-wide VPN tunnel routing all OS traffic through Xray via a virtual TUN interface (`kite0` / Wintun / utun).
+  - **Proxy Mode (System Proxy)**: Instant system HTTP/HTTPS and SOCKS5 proxy configuration without touching virtual network interfaces or routing tables.
+  - **Bridge Mode (Smart Split Tunneling)**: Granular per-application routing and collapsible rule groups with status toggles, auto-assignment, and process-level isolation.
+- 📡 **Subscriptions & Connection Profiles**:
+  - Import, organize, and auto-sync subscription links with one-click refresh and group collapsing.
+  - Structured parameter editor for all connection settings (Address, Port, UUID/Key, SNI, ShortId, Flow, Fingerprint, Header paths).
+  - Seamless toggle between structured visual form editor and raw connection URI (`vless://...`).
+  - Interactive profile list reordering with persistent custom ordering.
+- ⚡ **Real-Time Latency Testing (Ping)**:
+  - Real end-to-end latency measurement routed directly through the active proxy tunnel via in-memory Xray core.
+  - One-click "Ping All" profiles and automated ping check upon connection.
 - 📊 **Real-Time Traffic Monitor & Statistics**:
-  - Download traffic and speeds prioritized first throughout the entire interface.
+  - Live download and upload bandwidth meters with prioritized visibility.
   - Rolling 60-second real-time network activity chart with smooth dual SVG waveforms.
-  - Persistent cumulative traffic tracking per profile with instant reset capability.
+  - Persistent cumulative and session traffic tracking per profile with instant reset capability.
+- 🔍 **Native App Discovery with Icons**:
+  - Automatic installed application scanning on both **Linux** (XDG desktop entries & system theme icons) and **Windows** (Registry and Start Menu with extracted high-resolution PE/ICO icons).
+- 🔄 **In-App Self-Updater**:
+  - Background update notifications with interactive update dialog.
+  - Embedded release notes preview with Markdown rendering.
+  - Seamless automated download and self-installation across Linux (`.deb`), Windows (installer), and macOS.
 - ⚡ **Single-Instance Application**:
   - Out-of-the-box single instance enforcement via Wails (`SingleInstanceLock`).
-  - Running a second instance instantly brings the existing window to the front.
+  - Running a second instance brings the existing window to the front.
   - CLI argument forwarding: passing a connection link (`vless://...`) to the binary automatically imports it into the running instance.
 - 💤 **Sleep & Wake Watcher**:
   - Automatic sleep/resume detection (D-Bus `login1` on Linux, IOKit on macOS, Power events on Windows).
   - Health watchdog automatically heals or reconnects dropped tunnels on network interface change.
-- 🪟 **System Tray Integration**:
-  - Tray icon with quick connect/disconnect, active profile switcher, and window visibility toggles.
+- 🪟 **Desktop & System Tray Integration**:
+  - Tray icon with quick connect/disconnect, active profile switcher, and dynamic Routing Mode sub-menu.
   - Close-to-tray support (`HideWindowOnClose`).
+  - Guided elevation helpers for Linux network capabilities (`CAP_NET_ADMIN`) and Windows UAC.
 
 ---
 
@@ -119,7 +129,7 @@ sudo apt install -y build-essential libgtk-3-dev libwebkit2gtk-4.1-dev
 
 #### Windows Prerequisites
 - [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on Windows 10/11)
-- [Inno Setup 6](https://jrsoftware.org/isdl.php) (optional, to build Windows installer `.exe`)
+- [NSIS](https://nsis.sourceforge.io/) or [Inno Setup 6](https://jrsoftware.org/isdl.php) (optional, to build Windows installer `.exe`)
 
 ---
 
@@ -139,8 +149,9 @@ sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip build/bin/kite
 # 3. Build for Windows (from Windows host or cross-compilation)
 wails build -platform windows/amd64
 
-# (Optional) Generate Windows Installer with Inno Setup:
-iscc build/windows/installer/kite.iss
+# (Optional) Generate Windows Installer with NSIS or Inno Setup:
+makensis build/windows/installer/project.nsi
+# or: iscc build/windows/installer/kite.iss
 
 # 4. Build for macOS
 wails build -platform darwin/universal
