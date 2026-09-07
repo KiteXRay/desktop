@@ -14,6 +14,8 @@ type Collection struct {
 	items []*Item
 	mu    sync.RWMutex
 
+	tunnelDeviceIP      string
+	tunnelDNS           string
 	bridgeDialerFactory func(defaultSocksAddr string) tproxy.Dialer
 
 	onAdd    func(*Item)
@@ -113,6 +115,9 @@ func (l *Collection) AddItemWithSubscription(id, label, link, subscriptionID str
 	item.SetPersistedTraffic(read, written)
 	if l.bridgeDialerFactory != nil {
 		item.SetBridgeDialerFactory(l.bridgeDialerFactory)
+	}
+	if l.tunnelDeviceIP != "" || l.tunnelDNS != "" {
+		item.SetTunnelSettings(l.tunnelDeviceIP, l.tunnelDNS)
 	}
 
 	l.mu.Lock()
@@ -217,9 +222,14 @@ func (l *Collection) MoveItem(from, to int) error {
 }
 
 func (l *Collection) SetTunnelSettings(deviceIP, dns string) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	for _, item := range l.items {
+	l.mu.Lock()
+	l.tunnelDeviceIP = deviceIP
+	l.tunnelDNS = dns
+	items := make([]*Item, len(l.items))
+	copy(items, l.items)
+	l.mu.Unlock()
+
+	for _, item := range items {
 		if item != nil {
 			item.SetTunnelSettings(deviceIP, dns)
 		}

@@ -58,6 +58,20 @@ func serialize(item *connlist.Item) SavedState {
 	}
 }
 
+func NewSaveFileWithPath(path string) *SaveFile {
+	dir := filepath.Dir(path)
+	_ = os.MkdirAll(dir, 0755)
+
+	return &SaveFile{
+		filePath:       path,
+		tunnelMode:     "tunnel",
+		tunnelDeviceIP: "192.18.0.1",
+		tunnelDNS:      "8.8.8.8",
+		subscriptions:  make([]subscription.Subscription, 0),
+		bridgeRules:    make([]bridge.BridgeRule, 0),
+	}
+}
+
 func NewSaveFile() *SaveFile {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -66,16 +80,7 @@ func NewSaveFile() *SaveFile {
 	}
 
 	appConfigDir := filepath.Join(configDir, configSubdir)
-	_ = os.MkdirAll(appConfigDir, 0755)
-
-	return &SaveFile{
-		filePath:       filepath.Join(appConfigDir, configFileName),
-		tunnelMode:     "tunnel",
-		tunnelDeviceIP: "192.18.0.1",
-		tunnelDNS:      "8.8.8.8",
-		subscriptions:  make([]subscription.Subscription, 0),
-		bridgeRules:    make([]bridge.BridgeRule, 0),
-	}
+	return NewSaveFileWithPath(filepath.Join(appConfigDir, configFileName))
 }
 
 func (s *SaveFile) GetTunnelMode() string {
@@ -121,6 +126,8 @@ func (s *SaveFile) GetTunnelSettings() (string, string) {
 func (s *SaveFile) SetTunnelSettings(deviceIP, dns string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	deviceIP = strings.TrimSpace(deviceIP)
+	dns = strings.TrimSpace(dns)
 	if deviceIP != "" {
 		s.tunnelDeviceIP = deviceIP
 	}
@@ -202,6 +209,7 @@ func (s *SaveFile) Update(list *connlist.Collection) {
 	}
 
 	dir := filepath.Dir(s.filePath)
+	_ = os.MkdirAll(dir, 0755)
 	tmpFile, err := os.CreateTemp(dir, "connections-*.tmp")
 	if err != nil {
 		// Fallback to direct write if temp file creation fails
@@ -248,18 +256,18 @@ func (s *SaveFile) Load(list *connlist.Collection) {
 	}
 
 	var appCfg AppConfigFile
-	if err := json.Unmarshal(data, &appCfg); err == nil && (len(appCfg.Connections) > 0 || appCfg.TunnelMode != "") {
+	if err := json.Unmarshal(data, &appCfg); err == nil {
 		s.mu.Lock()
 		if appCfg.TunnelMode != "" {
 			s.tunnelMode = appCfg.TunnelMode
 		}
 		if appCfg.TunnelDeviceIP != "" {
-			s.tunnelDeviceIP = appCfg.TunnelDeviceIP
+			s.tunnelDeviceIP = strings.TrimSpace(appCfg.TunnelDeviceIP)
 		}
 		if appCfg.TunnelDNS != "" {
-			s.tunnelDNS = appCfg.TunnelDNS
+			s.tunnelDNS = strings.TrimSpace(appCfg.TunnelDNS)
 		}
-		if len(appCfg.Subscriptions) > 0 {
+		if appCfg.Subscriptions != nil {
 			for i := range appCfg.Subscriptions {
 				sub := &appCfg.Subscriptions[i]
 				if sub.SubID == "" {
@@ -271,7 +279,7 @@ func (s *SaveFile) Load(list *connlist.Collection) {
 			}
 			s.subscriptions = appCfg.Subscriptions
 		}
-		if len(appCfg.BridgeRules) > 0 {
+		if appCfg.BridgeRules != nil {
 			s.bridgeRules = appCfg.BridgeRules
 		}
 		s.mu.Unlock()

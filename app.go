@@ -47,6 +47,11 @@ type ProxyEndpointsDTO struct {
 	HTTPURL    string `json:"httpUrl"`
 }
 
+type TunnelSettingsDTO struct {
+	DeviceIP string `json:"deviceIP"`
+	DNS      string `json:"dns"`
+}
+
 type ConnectionDTO struct {
 	ID             string            `json:"id"`
 	SubscriptionID string            `json:"subscriptionId,omitempty"`
@@ -398,6 +403,8 @@ func (a *App) connectInternal(id string) error {
 			return bridge.NewBridgeDialer(defaultSocksAddr, a.saveFile.GetBridgeRules, slog.Default())
 		})
 	}
+	devIP, dns := a.saveFile.GetTunnelSettings()
+	target.SetTunnelSettings(devIP, dns)
 	if err := target.ConnectWithMode(tMode); err != nil {
 		slog.Error("failed to connect", "error", err)
 		a.SetActiveID("")
@@ -1352,14 +1359,25 @@ func (a *App) verifyTunnelConnectivity(timeout time.Duration) bool {
 	return false
 }
 
-func (a *App) GetTunnelSettings() (string, string) {
-	return a.saveFile.GetTunnelSettings()
+func (a *App) GetTunnelSettings() TunnelSettingsDTO {
+	devIP, dns := a.saveFile.GetTunnelSettings()
+	return TunnelSettingsDTO{
+		DeviceIP: devIP,
+		DNS:      dns,
+	}
 }
 
 func (a *App) SetTunnelSettings(deviceIP, dns string) error {
 	a.saveFile.SetTunnelSettings(deviceIP, dns)
-	a.items.SetTunnelSettings(deviceIP, dns)
+	curDevIP, curDNS := a.saveFile.GetTunnelSettings()
+	a.items.SetTunnelSettings(curDevIP, curDNS)
 	a.saveFile.Update(a.items)
+	if a.ctx != nil {
+		wruntime.EventsEmit(a.ctx, "tunnel:settings_changed", TunnelSettingsDTO{
+			DeviceIP: curDevIP,
+			DNS:      curDNS,
+		})
+	}
 	return nil
 }
 

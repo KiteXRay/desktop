@@ -184,6 +184,20 @@ export namespace main {
 	        this.writeHistory = source["writeHistory"];
 	    }
 	}
+	export class TunnelSettingsDTO {
+	    deviceIP: string;
+	    dns: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TunnelSettingsDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.deviceIP = source["deviceIP"];
+	        this.dns = source["dns"];
+	    }
+	}
 
 }
 
@@ -228,6 +242,8 @@ export namespace updater {
 	    assetUrl: string;
 	    assetName: string;
 	    assetSize: number;
+	    checksumUrl?: string;
+	    expectedSha?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ReleaseInfo(source);
@@ -244,6 +260,8 @@ export namespace updater {
 	        this.assetUrl = source["assetUrl"];
 	        this.assetName = source["assetName"];
 	        this.assetSize = source["assetSize"];
+	        this.checksumUrl = source["checksumUrl"];
+	        this.expectedSha = source["expectedSha"];
 	    }
 	}
 

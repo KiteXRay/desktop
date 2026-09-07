@@ -1,4 +1,4 @@
-import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO, PingResultDTO, Subscription, BridgeRule, AddResultDTO } from '../types';
+import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO, PingResultDTO, Subscription, BridgeRule, AddResultDTO, TunnelSettingsDTO } from '../types';
 
 declare global {
   interface Window {
@@ -23,7 +23,7 @@ declare global {
           ParseLinkPreview(link: string): Promise<Record<string, string>>;
           GetTunnelMode(): Promise<string>;
           SetTunnelMode(mode: string): Promise<void>;
-          GetTunnelSettings(): Promise<[string, string]>;
+          GetTunnelSettings(): Promise<TunnelSettingsDTO>;
           SetTunnelSettings(deviceIP: string, dns: string): Promise<void>;
           AddConnectionOrSubscription(input: string, label: string): Promise<import('../types').AddResultDTO>;
           GetSubscriptions(): Promise<import('../types').Subscription[]>;
@@ -195,12 +195,24 @@ export const api = {
     if (app?.SetTunnelMode) return app.SetTunnelMode(mode);
   },
 
-  async getTunnelSettings(): Promise<{ deviceIP: string; dns: string }> {
+  async getTunnelSettings(): Promise<TunnelSettingsDTO> {
     const app = getApp();
     if (app?.GetTunnelSettings) {
-      const res = await app.GetTunnelSettings();
-      if (Array.isArray(res) && res.length >= 2) {
-        return { deviceIP: res[0] || '192.18.0.1', dns: res[1] || '8.8.8.8' };
+      try {
+        const res: any = await app.GetTunnelSettings();
+        if (res && typeof res === 'object') {
+          const devIP = res.deviceIP || res.deviceIp || res.DeviceIP || (Array.isArray(res) ? res[0] : undefined);
+          const dnsVal = res.dns || res.DNS || (Array.isArray(res) ? res[1] : undefined);
+          return {
+            deviceIP: (typeof devIP === 'string' && devIP.trim()) ? devIP.trim() : '192.18.0.1',
+            dns: (typeof dnsVal === 'string' && dnsVal.trim()) ? dnsVal.trim() : '8.8.8.8',
+          };
+        }
+        if (typeof res === 'string' && res.trim()) {
+          return { deviceIP: res.trim(), dns: '8.8.8.8' };
+        }
+      } catch (err) {
+        console.error('Failed to get tunnel settings:', err);
       }
     }
     return { deviceIP: '192.18.0.1', dns: '8.8.8.8' };
@@ -318,6 +330,13 @@ export const api = {
   onModeChanged(callback: (mode: string) => void): () => void {
     if (window.runtime?.EventsOn) {
       return window.runtime.EventsOn('mode:changed', callback);
+    }
+    return () => {};
+  },
+
+  onTunnelSettingsChanged(callback: (settings: TunnelSettingsDTO) => void): () => void {
+    if (window.runtime?.EventsOn) {
+      return window.runtime.EventsOn('tunnel:settings_changed', callback);
     }
     return () => {};
   },

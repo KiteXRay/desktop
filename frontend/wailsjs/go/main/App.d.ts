@@ -14,6 +14,8 @@ export function AddConnectionOrSubscription(arg1:string,arg2:string):Promise<Rec
 
 export function BuildLinkFromConfig(arg1:Record<string, string>):Promise<string>;
 
+export function CancelUpdate():Promise<void>;
+
 export function CheckForUpdate():Promise<updater.ReleaseInfo>;
 
 export function CheckNetworkPrivileges():Promise<main.NetworkPrivilegesDTO>;
@@ -50,7 +52,7 @@ export function GetSystemProxyStatus():Promise<boolean>;
 
 export function GetTunnelMode():Promise<string>;
 
-export function GetTunnelSettings():Promise<string|string>;
+export function GetTunnelSettings():Promise<main.TunnelSettingsDTO>;
 
 export function GrantNetworkPrivileges():Promise<boolean>;
 

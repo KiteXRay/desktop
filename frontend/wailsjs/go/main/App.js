@@ -18,6 +18,10 @@ export function BuildLinkFromConfig(arg1) {
   return window['go']['main']['App']['BuildLinkFromConfig'](arg1);
 }
 
+export function CancelUpdate() {
+  return window['go']['main']['App']['CancelUpdate']();
+}
+
 export function CheckForUpdate() {
   return window['go']['main']['App']['CheckForUpdate']();
 }

@@ -356,18 +356,6 @@ export function App() {
   };
 
   useEffect(() => {
-    api.getTunnelMode().then(m => setTunnelMode((m as TunnelMode) || 'system'));
-
-    const unsubMode = api.onModeChanged(m => {
-      setTunnelMode((m as TunnelMode) || 'system');
-    });
-
-    return () => {
-      unsubMode();
-    };
-  }, []);
-
-  useEffect(() => {
     if (activeConnection?.id) {
       setLastActiveId(activeConnection.id);
       localStorage.setItem('kite_last_active_id', activeConnection.id);

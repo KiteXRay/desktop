@@ -54,6 +54,11 @@ export interface ConnectionStatusEvent {
 
 export type TunnelMode = 'tunnel' | 'proxy' | 'bridge' | 'system' | 'per_app';
 
+export interface TunnelSettingsDTO {
+  deviceIP: string;
+  dns: string;
+}
+
 export interface Subscription {
   id: string;
   subId?: string;

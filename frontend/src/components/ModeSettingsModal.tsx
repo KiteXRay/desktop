@@ -77,6 +77,11 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
       })
       .catch((err) => console.error('Failed to load tunnel settings:', err));
 
+    const unsubTunnel = api.onTunnelSettingsChanged((settings) => {
+      if (settings.deviceIP) setDeviceIP(settings.deviceIP);
+      if (settings.dns) setDNS(settings.dns);
+    });
+
     // Load Proxy settings & endpoints
     api.getSystemProxyStatus()
       .then((status) => setSystemProxyEnabled(status))
@@ -88,9 +93,23 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
 
     setTunnelError(null);
     setTunnelSaved(false);
+
+    return () => {
+      unsubTunnel();
+    };
   }, [isOpen, initialTab]);
 
   if (!isOpen) return null;
+
+  const isValidIPv4 = (ip: string): boolean => {
+    const parts = ip.split('.');
+    if (parts.length !== 4) return false;
+    return parts.every((p) => {
+      if (!/^\d{1,3}$/.test(p)) return false;
+      const n = Number(p);
+      return n >= 0 && n <= 255;
+    });
+  };
 
   const handleTunnelSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,12 +125,11 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
       return;
     }
 
-    const ipPattern = /^(\d{1,3}\.){3}\d{1,3}$/;
-    if (!ipPattern.test(cleanIP)) {
+    if (!isValidIPv4(cleanIP)) {
       setTunnelError('Invalid Device IP format (expected e.g. 192.18.0.1)');
       return;
     }
-    if (!ipPattern.test(cleanDNS)) {
+    if (!isValidIPv4(cleanDNS)) {
       setTunnelError('Invalid DNS format (expected e.g. 8.8.8.8)');
       return;
     }
@@ -121,6 +139,8 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
 
     try {
       await api.setTunnelSettings(cleanIP, cleanDNS);
+      setDeviceIP(cleanIP);
+      setDNS(cleanDNS);
       setTunnelSaved(true);
       showToast?.('Tunnel adapter settings saved', 'success');
       setTimeout(() => setTunnelSaved(false), 2500);
