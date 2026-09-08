@@ -428,7 +428,7 @@ func runAWG(ctx context.Context, tunName string, tunAddr string, tunGw string, t
 	tunNet.IP = tunIP
 
 	peerGw := net.ParseIP(tunGw)
-	if peerGw == nil {
+	if peerGw == nil || awgCfg.Address != "" {
 		peerGw = tunIP
 	}
 

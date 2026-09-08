@@ -24,10 +24,17 @@ type Config struct {
 	Jmax      int
 	S1        int
 	S2        int
-	H1        int64
-	H2        int64
-	H3        int64
-	H4        int64
+	S3        int
+	S4        int
+	H1        string
+	H2        string
+	H3        string
+	H4        string
+	I1        string
+	I2        string
+	I3        string
+	I4        string
+	I5        string
 
 	// Peer
 	PublicKey           string
@@ -116,24 +123,59 @@ func ParseConf(content string) (*Config, error) {
 					cfg.S2 = v
 					cfg.IsAmnezia = true
 				}
+			case "s3":
+				if v, err := strconv.Atoi(val); err == nil {
+					cfg.S3 = v
+					cfg.IsAmnezia = true
+				}
+			case "s4":
+				if v, err := strconv.Atoi(val); err == nil {
+					cfg.S4 = v
+					cfg.IsAmnezia = true
+				}
 			case "h1":
-				if v, err := strconv.ParseInt(val, 10, 64); err == nil {
-					cfg.H1 = v
+				if val != "" && val != "0" {
+					cfg.H1 = val
 					cfg.IsAmnezia = true
 				}
 			case "h2":
-				if v, err := strconv.ParseInt(val, 10, 64); err == nil {
-					cfg.H2 = v
+				if val != "" && val != "0" {
+					cfg.H2 = val
 					cfg.IsAmnezia = true
 				}
 			case "h3":
-				if v, err := strconv.ParseInt(val, 10, 64); err == nil {
-					cfg.H3 = v
+				if val != "" && val != "0" {
+					cfg.H3 = val
 					cfg.IsAmnezia = true
 				}
 			case "h4":
-				if v, err := strconv.ParseInt(val, 10, 64); err == nil {
-					cfg.H4 = v
+				if val != "" && val != "0" {
+					cfg.H4 = val
+					cfg.IsAmnezia = true
+				}
+			case "i1":
+				if val != "" {
+					cfg.I1 = val
+					cfg.IsAmnezia = true
+				}
+			case "i2":
+				if val != "" {
+					cfg.I2 = val
+					cfg.IsAmnezia = true
+				}
+			case "i3":
+				if val != "" {
+					cfg.I3 = val
+					cfg.IsAmnezia = true
+				}
+			case "i4":
+				if val != "" {
+					cfg.I4 = val
+					cfg.IsAmnezia = true
+				}
+			case "i5":
+				if val != "" {
+					cfg.I5 = val
 					cfg.IsAmnezia = true
 				}
 			}
@@ -203,6 +245,16 @@ func (c *Config) ToURI(label string) string {
 		v.Set("reserved", c.Reserved)
 	}
 
+	if c.AllowedIPs != "" {
+		v.Set("allowedips", c.AllowedIPs)
+	}
+	if c.DNS != "" {
+		v.Set("dns", c.DNS)
+	}
+	if c.PersistentKeepalive > 0 {
+		v.Set("persistentkeepalive", strconv.Itoa(c.PersistentKeepalive))
+	}
+
 	if c.IsAmnezia {
 		if c.Jc > 0 {
 			v.Set("jc", strconv.Itoa(c.Jc))
@@ -219,17 +271,38 @@ func (c *Config) ToURI(label string) string {
 		if c.S2 > 0 {
 			v.Set("s2", strconv.Itoa(c.S2))
 		}
-		if c.H1 > 0 {
-			v.Set("h1", strconv.FormatInt(c.H1, 10))
+		if c.S3 > 0 {
+			v.Set("s3", strconv.Itoa(c.S3))
 		}
-		if c.H2 > 0 {
-			v.Set("h2", strconv.FormatInt(c.H2, 10))
+		if c.S4 > 0 {
+			v.Set("s4", strconv.Itoa(c.S4))
 		}
-		if c.H3 > 0 {
-			v.Set("h3", strconv.FormatInt(c.H3, 10))
+		if c.H1 != "" && c.H1 != "0" {
+			v.Set("h1", c.H1)
 		}
-		if c.H4 > 0 {
-			v.Set("h4", strconv.FormatInt(c.H4, 10))
+		if c.H2 != "" && c.H2 != "0" {
+			v.Set("h2", c.H2)
+		}
+		if c.H3 != "" && c.H3 != "0" {
+			v.Set("h3", c.H3)
+		}
+		if c.H4 != "" && c.H4 != "0" {
+			v.Set("h4", c.H4)
+		}
+		if c.I1 != "" {
+			v.Set("i1", c.I1)
+		}
+		if c.I2 != "" {
+			v.Set("i2", c.I2)
+		}
+		if c.I3 != "" {
+			v.Set("i3", c.I3)
+		}
+		if c.I4 != "" {
+			v.Set("i4", c.I4)
+		}
+		if c.I5 != "" {
+			v.Set("i5", c.I5)
 		}
 	}
 
@@ -337,20 +410,48 @@ func ParseLink(rawLink string) (*Config, string, error) {
 		cfg.S2 = v
 		cfg.IsAmnezia = true
 	}
-	if v, err := strconv.ParseInt(q.Get("h1"), 10, 64); err == nil && v > 0 {
-		cfg.H1 = v
+	if v, err := strconv.Atoi(q.Get("s3")); err == nil && v > 0 {
+		cfg.S3 = v
 		cfg.IsAmnezia = true
 	}
-	if v, err := strconv.ParseInt(q.Get("h2"), 10, 64); err == nil && v > 0 {
-		cfg.H2 = v
+	if v, err := strconv.Atoi(q.Get("s4")); err == nil && v > 0 {
+		cfg.S4 = v
 		cfg.IsAmnezia = true
 	}
-	if v, err := strconv.ParseInt(q.Get("h3"), 10, 64); err == nil && v > 0 {
-		cfg.H3 = v
+	if h := q.Get("h1"); h != "" && h != "0" {
+		cfg.H1 = h
 		cfg.IsAmnezia = true
 	}
-	if v, err := strconv.ParseInt(q.Get("h4"), 10, 64); err == nil && v > 0 {
-		cfg.H4 = v
+	if h := q.Get("h2"); h != "" && h != "0" {
+		cfg.H2 = h
+		cfg.IsAmnezia = true
+	}
+	if h := q.Get("h3"); h != "" && h != "0" {
+		cfg.H3 = h
+		cfg.IsAmnezia = true
+	}
+	if h := q.Get("h4"); h != "" && h != "0" {
+		cfg.H4 = h
+		cfg.IsAmnezia = true
+	}
+	if i := q.Get("i1"); i != "" {
+		cfg.I1 = i
+		cfg.IsAmnezia = true
+	}
+	if i := q.Get("i2"); i != "" {
+		cfg.I2 = i
+		cfg.IsAmnezia = true
+	}
+	if i := q.Get("i3"); i != "" {
+		cfg.I3 = i
+		cfg.IsAmnezia = true
+	}
+	if i := q.Get("i4"); i != "" {
+		cfg.I4 = i
+		cfg.IsAmnezia = true
+	}
+	if i := q.Get("i5"); i != "" {
+		cfg.I5 = i
 		cfg.IsAmnezia = true
 	}
 
@@ -387,6 +488,15 @@ func (c *Config) ToMap(remark string) map[string]string {
 	if c.Reserved != "" {
 		m["Reserved"] = c.Reserved
 	}
+	if c.AllowedIPs != "" {
+		m["AllowedIPs"] = c.AllowedIPs
+	}
+	if c.DNS != "" {
+		m["DNS"] = c.DNS
+	}
+	if c.PersistentKeepalive > 0 {
+		m["PersistentKeepalive"] = strconv.Itoa(c.PersistentKeepalive)
+	}
 	if c.IsAmnezia {
 		if c.Jc > 0 {
 			m["Jc"] = strconv.Itoa(c.Jc)
@@ -403,17 +513,38 @@ func (c *Config) ToMap(remark string) map[string]string {
 		if c.S2 > 0 {
 			m["S2"] = strconv.Itoa(c.S2)
 		}
-		if c.H1 > 0 {
-			m["H1"] = strconv.FormatInt(c.H1, 10)
+		if c.S3 > 0 {
+			m["S3"] = strconv.Itoa(c.S3)
 		}
-		if c.H2 > 0 {
-			m["H2"] = strconv.FormatInt(c.H2, 10)
+		if c.S4 > 0 {
+			m["S4"] = strconv.Itoa(c.S4)
 		}
-		if c.H3 > 0 {
-			m["H3"] = strconv.FormatInt(c.H3, 10)
+		if c.H1 != "" && c.H1 != "0" {
+			m["H1"] = c.H1
 		}
-		if c.H4 > 0 {
-			m["H4"] = strconv.FormatInt(c.H4, 10)
+		if c.H2 != "" && c.H2 != "0" {
+			m["H2"] = c.H2
+		}
+		if c.H3 != "" && c.H3 != "0" {
+			m["H3"] = c.H3
+		}
+		if c.H4 != "" && c.H4 != "0" {
+			m["H4"] = c.H4
+		}
+		if c.I1 != "" {
+			m["I1"] = c.I1
+		}
+		if c.I2 != "" {
+			m["I2"] = c.I2
+		}
+		if c.I3 != "" {
+			m["I3"] = c.I3
+		}
+		if c.I4 != "" {
+			m["I4"] = c.I4
+		}
+		if c.I5 != "" {
+			m["I5"] = c.I5
 		}
 	}
 	return m

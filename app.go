@@ -379,6 +379,7 @@ func (a *App) ReorderConnections(from, to int) error {
 }
 
 func (a *App) Connect(id string) error {
+	a.isReconnecting.Store(false)
 	currentActive := a.ActiveID()
 	// If already active on this one, disconnect
 	if currentActive == id {
@@ -501,6 +502,7 @@ func (a *App) connectInternal(id string) error {
 }
 
 func (a *App) Disconnect() error {
+	a.isReconnecting.Store(false)
 	a.connectMu.Lock()
 	defer a.connectMu.Unlock()
 
@@ -634,7 +636,7 @@ func (a *App) ResetTraffic(id string) error {
 	return nil
 }
 
-var appVersion = "1.3.2"
+var appVersion = "1.4.0"
 
 func (a *App) GetAppInfo() AppInfoDTO {
 	return AppInfoDTO{
@@ -845,6 +847,9 @@ func (a *App) collectAllProfileIPs() []string {
 }
 
 func (a *App) pingActiveConnection(timeout time.Duration) int64 {
+	if a.ActiveID() == "" {
+		return -1
+	}
 	targets := []string{"https://www.google.com/generate_204", "http://cp.cloudflare.com/generate_204"}
 
 	// 1. Try dialing through SOCKS5 proxy (127.0.0.1:10808)
@@ -1514,6 +1519,10 @@ func (a *App) handleSystemWakeUp() {
 	// 4. Reconnect with retry (up to 4 attempts)
 	var lastErr error
 	for attempt := 1; attempt <= 4; attempt++ {
+		if !a.isReconnecting.Load() {
+			slog.Info("Reconnect aborted: user disconnected or switched profile")
+			return
+		}
 		slog.Info("Reconnecting VPN session after sleep", "attempt", attempt, "id", activeID)
 		err := a.connectInternal(activeID)
 		if err == nil {

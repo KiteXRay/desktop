@@ -200,3 +200,88 @@ func TestApp_AddStandardWireguardLink(t *testing.T) {
 	assert.Equal(t, "1420", preview["Mtu"])
 }
 
+func TestBuildLinkFromMap_AWG2(t *testing.T) {
+	cfg := map[string]string{
+		"Protocol":     "awg",
+		"Address":      "2.27.57.42",
+		"Port":         "37801",
+		"SecretKey":    "dYuAVd/JcBqCyPKSri07a2p8EBEDOD8ZhoexnCGS5HE=",
+		"PublicKey":    "hrhczy2mUqZnXPmO9/464XnXt1iNKN5Vjhv3pO2grQM=",
+		"PreSharedKey": "0PKgmUnQlCEwv0PhOncPlh5Y1HawvXJZTkTzQUVskGM=",
+		"LocalAddress": "10.8.1.32/32",
+		"Jc":           "5",
+		"Jmin":         "10",
+		"Jmax":         "50",
+		"S1":           "125",
+		"S2":           "34",
+		"S3":           "14",
+		"S4":           "8",
+		"H1":           "461798703-1217982642",
+		"H2":           "1925142937-1999846612",
+		"H3":           "2095634297-2109695060",
+		"H4":           "2136986792-2141306962",
+		"I1":           "<r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>",
+		"Remark":       "111111",
+	}
+
+	link, err := buildLinkFromMap(cfg)
+	require.NoError(t, err)
+	assert.Contains(t, link, "awg://")
+	assert.Contains(t, link, "2.27.57.42:37801")
+	assert.Contains(t, link, "s3=14")
+	assert.Contains(t, link, "s4=8")
+	assert.Contains(t, link, "h1=461798703-1217982642")
+	assert.Contains(t, link, "#111111")
+}
+
+func TestApp_AddAndParse111111Conf(t *testing.T) {
+	app := NewApp()
+	confContent := `[Interface]
+Address = 10.8.1.32/32
+DNS = 1.1.1.1, 1.0.0.1
+PrivateKey = dYuAVd/JcBqCyPKSri07a2p8EBEDOD8ZhoexnCGS5HE=
+Jc = 5
+Jmin = 10
+Jmax = 50
+S1 = 125
+S2 = 34
+S3 = 14
+S4 = 8
+H1 = 461798703-1217982642
+H2 = 1925142937-1999846612
+H3 = 2095634297-2109695060
+H4 = 2136986792-2141306962
+I1 = <r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>
+I2 = 
+I3 = 
+I4 = 
+I5 = 
+
+[Peer]
+PublicKey = hrhczy2mUqZnXPmO9/464XnXt1iNKN5Vjhv3pO2grQM=
+PresharedKey = 0PKgmUnQlCEwv0PhOncPlh5Y1HawvXJZTkTzQUVskGM=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = 2.27.57.42:37801
+PersistentKeepalive = 25
+`
+	dto, err := app.AddConnection(confContent, "111111")
+	require.NoError(t, err)
+	require.NotNil(t, dto)
+	assert.Equal(t, "111111", dto.Label)
+	assert.Equal(t, "awg", dto.Protocol)
+	assert.Equal(t, "2.27.57.42", dto.Address)
+	assert.Equal(t, "37801", dto.Port)
+
+	preview, err := app.ParseLinkPreview(dto.Link)
+	require.NoError(t, err)
+	assert.Equal(t, "awg", preview["Protocol"])
+	assert.Equal(t, "14", preview["S3"])
+	assert.Equal(t, "8", preview["S4"])
+	assert.Equal(t, "461798703-1217982642", preview["H1"])
+	assert.Equal(t, "1925142937-1999846612", preview["H2"])
+	assert.Equal(t, "2095634297-2109695060", preview["H3"])
+	assert.Equal(t, "2136986792-2141306962", preview["H4"])
+	assert.Equal(t, "<r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>", preview["I1"])
+}
+
+

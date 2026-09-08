@@ -54,6 +54,53 @@ PersistentKeepalive = 25
 	assert.Contains(t, ipc, "persistent_keepalive_interval=25\n")
 }
 
+func TestBuildIPCConfig_AWG2(t *testing.T) {
+	raw := `[Interface]
+Address = 10.8.1.32/32
+DNS = 1.1.1.1, 1.0.0.1
+PrivateKey = dYuAVd/JcBqCyPKSri07a2p8EBEDOD8ZhoexnCGS5HE=
+Jc = 5
+Jmin = 10
+Jmax = 50
+S1 = 125
+S2 = 34
+S3 = 14
+S4 = 8
+H1 = 461798703-1217982642
+H2 = 1925142937-1999846612
+H3 = 2095634297-2109695060
+H4 = 2136986792-2141306962
+I1 = <r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>
+I2 = 
+I3 = 
+I4 = 
+I5 = 
+
+[Peer]
+PublicKey = hrhczy2mUqZnXPmO9/464XnXt1iNKN5Vjhv3pO2grQM=
+PresharedKey = 0PKgmUnQlCEwv0PhOncPlh5Y1HawvXJZTkTzQUVskGM=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = 2.27.57.42:37801
+PersistentKeepalive = 25
+`
+	cfg, err := wireguard.ParseConf(raw)
+	require.NoError(t, err)
+
+	ipc, err := BuildIPCConfig(cfg)
+	require.NoError(t, err)
+
+	assert.Contains(t, ipc, "s1=125\n")
+	assert.Contains(t, ipc, "s2=34\n")
+	assert.Contains(t, ipc, "s3=14\n")
+	assert.Contains(t, ipc, "s4=8\n")
+	assert.Contains(t, ipc, "h1=461798703-1217982642\n")
+	assert.Contains(t, ipc, "h2=1925142937-1999846612\n")
+	assert.Contains(t, ipc, "h3=2095634297-2109695060\n")
+	assert.Contains(t, ipc, "h4=2136986792-2141306962\n")
+	assert.Contains(t, ipc, "i1=<r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>\n")
+	assert.NotContains(t, ipc, "i2=")
+}
+
 func TestEngine_StartAndCloseIdempotent(t *testing.T) {
 	raw := `[Interface]
 PrivateKey = yAnz5TF+KmRqDCBgMW10geXdDaFnBP9TeQoHGnRzhlk=

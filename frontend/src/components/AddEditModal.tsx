@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Plus,
   FileUp,
+  Sparkles,
 } from 'lucide-react';
 import { api } from '../api/wails';
 import type { ConnectionDTO } from '../types';
@@ -495,6 +496,8 @@ const EditProfileModalView: React.FC<EditProfileModalViewProps> = ({
   const netVal = (params.Network || params.Type || 'tcp').toLowerCase();
   let protoVal = (params.Protocol || 'vless').toLowerCase();
   if (protoVal === 'ss') protoVal = 'shadowsocks';
+  const isWireguard = protoVal === 'wireguard' || protoVal === 'awg' || protoVal === 'amneziawg';
+  const isAWG = protoVal === 'awg' || protoVal === 'amneziawg';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150">
@@ -600,7 +603,7 @@ const EditProfileModalView: React.FC<EditProfileModalViewProps> = ({
 
                   <StyledSelect
                     label="Protocol"
-                    value={protoVal}
+                    value={protoVal === 'amneziawg' ? 'awg' : protoVal}
                     onChange={e => updateParam('Protocol', e.target.value)}
                   >
                     <option value="vless" className="bg-slate-900 text-slate-200 py-1">vless</option>
@@ -608,6 +611,7 @@ const EditProfileModalView: React.FC<EditProfileModalViewProps> = ({
                     <option value="trojan" className="bg-slate-900 text-slate-200 py-1">trojan</option>
                     <option value="shadowsocks" className="bg-slate-900 text-slate-200 py-1">shadowsocks</option>
                     <option value="wireguard" className="bg-slate-900 text-slate-200 py-1">wireguard</option>
+                    <option value="awg" className="bg-slate-900 text-slate-200 py-1">amneziawg (awg)</option>
                   </StyledSelect>
 
                   <div>
@@ -639,11 +643,18 @@ const EditProfileModalView: React.FC<EditProfileModalViewProps> = ({
               </div>
 
               {/* WireGuard Interface & Peer Settings */}
-              {protoVal === 'wireguard' && (
+              {isWireguard && (
                 <div className="bg-slate-950/40 rounded-xl p-4 border border-slate-800/80 flex flex-col gap-3.5">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-400">
-                    <Shield className="w-3.5 h-3.5" />
-                    <span>WireGuard Interface & Peer</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                      <Shield className="w-3.5 h-3.5" />
+                      <span>{isAWG ? 'AmneziaWG / WireGuard Interface & Peer' : 'WireGuard Interface & Peer'}</span>
+                    </div>
+                    {isAWG && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
+                        AWG 2.0
+                      </span>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -716,7 +727,7 @@ const EditProfileModalView: React.FC<EditProfileModalViewProps> = ({
                       />
                     </div>
 
-                    <div className="sm:col-span-2">
+                    <div>
                       <label className="block text-[11px] font-medium text-slate-400 mb-1">
                         Pre-Shared Key (Optional)
                       </label>
@@ -728,11 +739,303 @@ const EditProfileModalView: React.FC<EditProfileModalViewProps> = ({
                         className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-emerald-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
                       />
                     </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                        Allowed IPs
+                      </label>
+                      <input
+                        type="text"
+                        value={params.AllowedIPs || params.Allowed_ips || ''}
+                        onChange={e => updateParams({ AllowedIPs: e.target.value, Allowed_ips: e.target.value })}
+                        placeholder="0.0.0.0/0, ::/0"
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-emerald-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                        DNS Servers
+                      </label>
+                      <input
+                        type="text"
+                        value={params.DNS || params.Dns || ''}
+                        onChange={e => updateParams({ DNS: e.target.value, Dns: e.target.value })}
+                        placeholder="1.1.1.1, 1.0.0.1"
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-emerald-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                        Persistent Keepalive
+                      </label>
+                      <input
+                        type="text"
+                        value={params.PersistentKeepalive || params.Keepalive || ''}
+                        onChange={e => updateParams({ PersistentKeepalive: e.target.value, Keepalive: e.target.value })}
+                        placeholder="25"
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-emerald-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                        Reserved Bytes (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={params.Reserved || ''}
+                        onChange={e => updateParam('Reserved', e.target.value)}
+                        placeholder="e.g. 0,0,0 or base64"
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-emerald-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                      />
+                    </div>
                   </div>
                 </div>
               )}
 
-              {protoVal !== 'wireguard' && (
+              {/* AmneziaWG Obfuscation Settings */}
+              {isAWG && (
+                <div className="bg-slate-950/40 rounded-xl p-4 border border-indigo-500/20 flex flex-col gap-3.5">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-indigo-400">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>AmneziaWG Obfuscation (Junk, Magic, Headers & Chains)</span>
+                  </div>
+
+                  {/* Junk Packets */}
+                  <div>
+                    <span className="text-[10px] uppercase font-semibold text-slate-500 tracking-wider block mb-1.5">
+                      Junk Packet Parameters
+                    </span>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Count (Jc)
+                        </label>
+                        <input
+                          type="text"
+                          value={params.Jc || ''}
+                          onChange={e => updateParam('Jc', e.target.value)}
+                          placeholder="e.g. 5"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Min Size (Jmin)
+                        </label>
+                        <input
+                          type="text"
+                          value={params.Jmin || ''}
+                          onChange={e => updateParam('Jmin', e.target.value)}
+                          placeholder="e.g. 10"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Max Size (Jmax)
+                        </label>
+                        <input
+                          type="text"
+                          value={params.Jmax || ''}
+                          onChange={e => updateParam('Jmax', e.target.value)}
+                          placeholder="e.g. 50"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Magic Paddings S1-S4 */}
+                  <div>
+                    <span className="text-[10px] uppercase font-semibold text-slate-500 tracking-wider block mb-1.5">
+                      Packet Paddings (S1 – S4)
+                    </span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Init (S1)
+                        </label>
+                        <input
+                          type="text"
+                          value={params.S1 || ''}
+                          onChange={e => updateParam('S1', e.target.value)}
+                          placeholder="e.g. 125"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Response (S2)
+                        </label>
+                        <input
+                          type="text"
+                          value={params.S2 || ''}
+                          onChange={e => updateParam('S2', e.target.value)}
+                          placeholder="e.g. 34"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Cookie (S3)
+                        </label>
+                        <input
+                          type="text"
+                          value={params.S3 || ''}
+                          onChange={e => updateParam('S3', e.target.value)}
+                          placeholder="e.g. 14"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Transport (S4)
+                        </label>
+                        <input
+                          type="text"
+                          value={params.S4 || ''}
+                          onChange={e => updateParam('S4', e.target.value)}
+                          placeholder="e.g. 8"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Magic Headers H1-H4 */}
+                  <div>
+                    <span className="text-[10px] uppercase font-semibold text-slate-500 tracking-wider block mb-1.5">
+                      Magic Headers (H1 – H4) — Numbers or min-max Ranges
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Init Header (H1)
+                        </label>
+                        <input
+                          type="text"
+                          value={params.H1 || ''}
+                          onChange={e => updateParam('H1', e.target.value)}
+                          placeholder="e.g. 1050280201 or 461798703-1217982642"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Response Header (H2)
+                        </label>
+                        <input
+                          type="text"
+                          value={params.H2 || ''}
+                          onChange={e => updateParam('H2', e.target.value)}
+                          placeholder="e.g. 2061389574 or 1925142937-1999846612"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Cookie Header (H3)
+                        </label>
+                        <input
+                          type="text"
+                          value={params.H3 || ''}
+                          onChange={e => updateParam('H3', e.target.value)}
+                          placeholder="e.g. 201794519 or 2095634297-2109695060"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Transport Header (H4)
+                        </label>
+                        <input
+                          type="text"
+                          value={params.H4 || ''}
+                          onChange={e => updateParam('H4', e.target.value)}
+                          placeholder="e.g. 820786197 or 2136986792-2141306962"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Obfuscation Chains I1-I5 */}
+                  <div>
+                    <span className="text-[10px] uppercase font-semibold text-slate-500 tracking-wider block mb-1.5">
+                      Packet Obfuscation Chains (I1 – I5)
+                    </span>
+                    <div className="grid grid-cols-1 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Init Chain (I1)
+                        </label>
+                        <input
+                          type="text"
+                          value={params.I1 || ''}
+                          onChange={e => updateParam('I1', e.target.value)}
+                          placeholder="e.g. <r 2><b 0x858000010001000000000669636c6f756403636f6d...>"
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                            Chain (I2)
+                          </label>
+                          <input
+                            type="text"
+                            value={params.I2 || ''}
+                            onChange={e => updateParam('I2', e.target.value)}
+                            placeholder="Optional <...>"
+                            className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                            Chain (I3)
+                          </label>
+                          <input
+                            type="text"
+                            value={params.I3 || ''}
+                            onChange={e => updateParam('I3', e.target.value)}
+                            placeholder="Optional <...>"
+                            className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                            Chain (I4)
+                          </label>
+                          <input
+                            type="text"
+                            value={params.I4 || ''}
+                            onChange={e => updateParam('I4', e.target.value)}
+                            placeholder="Optional <...>"
+                            className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                            Chain (I5)
+                          </label>
+                          <input
+                            type="text"
+                            value={params.I5 || ''}
+                            onChange={e => updateParam('I5', e.target.value)}
+                            placeholder="Optional <...>"
+                            className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 focus:border-indigo-500 text-slate-100 placeholder-slate-600 text-xs transition-colors outline-hidden font-mono"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!isWireguard && (
                 <>
               {/* Section 2: Authentication & Security */}
               <div className="bg-slate-950/40 rounded-xl p-4 border border-slate-800/80 flex flex-col gap-3.5">

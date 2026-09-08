@@ -1,6 +1,10 @@
-## Kite v1.3.2
+## Kite v1.4.0
 
-### 🚀 Improvements & Fixes
-- **Accurate Active Latency Probing**: Replaced immediate local SOCKS handshake dial with warm HTTP HEAD probes to `generate_204`, resolving incorrect `ping=1ms` on active VLESS and normalizing active WireGuard/AmneziaWG latency measurements.
-- **Physical ISP Pre-Bypass for Profile Pings**: Added `--bypass-ips` support to `kite-tunnel`. When a VPN session starts, all saved profile endpoints are pre-routed through the physical ISP gateway. Pinging any profile while connected now reflects real direct latency without traffic chaining through the active tunnel.
-- **Eliminated Routing Loops & Flaps**: Eliminated socket contention and route flapping during latency tests by isolating all profile endpoints at tunnel startup.
+### 🚀 AmneziaWG 2.0 & WireGuard Features
+- **AmneziaWG 2.0 Protocol Support**: Added full support for AmneziaWG 2.0 parameters, including `H1`–`H4` packet header ranges, `S3`/`S4` handshake padding bounds, and `I1`–`I5` junk packet obfuscation sequence chains.
+- **WireGuard & AmneziaWG Profile Editor**: Added manual profile creation and editing in the application modal (`AddEditModal`). Configurable parameters now include `AllowedIPs`, `DNS`, `PersistentKeepalive`, `Address`, `MTU`, `Reserved`, plus all AmneziaWG obfuscation fields (`Jc`, `Jmin`, `Jmax`, `S1`–`S4`, `H1`–`H4`, `I1`–`I5`).
+- **Config & URI Serialization**: Added bidirectional conversion and parsing for AWG 2.0 parameters in standard configuration files (`.conf`) and `awg://` share links.
+
+### 🛠 Fixes & Stability
+- **Native TUN Gateway Routing**: Fixed point-to-point peer routing gateway assignment for native WireGuard/AWG tunnel interfaces (`kite-tunnel`), resolving unreachable gateway errors on custom interface subnets.
+- **Profile Switching & Reconnection Guards**: Prevented background watchdog reconnection loops from hijacking connection state or holding SOCKS ports when switching profiles or disconnecting.

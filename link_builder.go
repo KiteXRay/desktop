@@ -293,6 +293,22 @@ func buildLinkFromMap(cfg map[string]string) (string, error) {
 			v.Set("reserved", res)
 		}
 
+		if aip := strings.TrimSpace(cfg["AllowedIPs"]); aip != "" {
+			v.Set("allowedips", aip)
+		} else if aip := strings.TrimSpace(cfg["Allowed_ips"]); aip != "" {
+			v.Set("allowedips", aip)
+		}
+		if dns := strings.TrimSpace(cfg["DNS"]); dns != "" {
+			v.Set("dns", dns)
+		} else if dns := strings.TrimSpace(cfg["Dns"]); dns != "" {
+			v.Set("dns", dns)
+		}
+		if ka := strings.TrimSpace(cfg["PersistentKeepalive"]); ka != "" {
+			v.Set("persistentkeepalive", ka)
+		} else if ka := strings.TrimSpace(cfg["Keepalive"]); ka != "" {
+			v.Set("persistentkeepalive", ka)
+		}
+
 		encodedQuery := v.Encode()
 		u := fmt.Sprintf("wireguard://%s@%s", url.PathEscape(secretKey), endpoint)
 		link = u
@@ -358,8 +374,24 @@ func buildLinkFromMap(cfg map[string]string) (string, error) {
 			v.Set("reserved", res)
 		}
 
+		if aip := strings.TrimSpace(cfg["AllowedIPs"]); aip != "" {
+			v.Set("allowedips", aip)
+		} else if aip := strings.TrimSpace(cfg["Allowed_ips"]); aip != "" {
+			v.Set("allowedips", aip)
+		}
+		if dns := strings.TrimSpace(cfg["DNS"]); dns != "" {
+			v.Set("dns", dns)
+		} else if dns := strings.TrimSpace(cfg["Dns"]); dns != "" {
+			v.Set("dns", dns)
+		}
+		if ka := strings.TrimSpace(cfg["PersistentKeepalive"]); ka != "" {
+			v.Set("persistentkeepalive", ka)
+		} else if ka := strings.TrimSpace(cfg["Keepalive"]); ka != "" {
+			v.Set("persistentkeepalive", ka)
+		}
+
 		// AWG obfuscation headers
-		for _, f := range []string{"jc", "jmin", "jmax", "s1", "s2", "h1", "h2", "h3", "h4"} {
+		for _, f := range []string{"jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "i1", "i2", "i3", "i4", "i5"} {
 			if val := strings.TrimSpace(cfg[f]); val != "" {
 				v.Set(f, val)
 			} else if val := strings.TrimSpace(cfg[strings.ToUpper(f)]); val != "" {

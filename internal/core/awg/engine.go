@@ -443,17 +443,38 @@ func BuildIPCConfig(cfg *wireguard.Config) (string, error) {
 	if cfg.S2 > 0 {
 		ipc.WriteString(fmt.Sprintf("s2=%d\n", cfg.S2))
 	}
-	if cfg.H1 > 0 {
-		ipc.WriteString(fmt.Sprintf("h1=%d\n", cfg.H1))
+	if cfg.S3 > 0 {
+		ipc.WriteString(fmt.Sprintf("s3=%d\n", cfg.S3))
 	}
-	if cfg.H2 > 0 {
-		ipc.WriteString(fmt.Sprintf("h2=%d\n", cfg.H2))
+	if cfg.S4 > 0 {
+		ipc.WriteString(fmt.Sprintf("s4=%d\n", cfg.S4))
 	}
-	if cfg.H3 > 0 {
-		ipc.WriteString(fmt.Sprintf("h3=%d\n", cfg.H3))
+	if cfg.H1 != "" && cfg.H1 != "0" {
+		ipc.WriteString(fmt.Sprintf("h1=%s\n", cfg.H1))
 	}
-	if cfg.H4 > 0 {
-		ipc.WriteString(fmt.Sprintf("h4=%d\n", cfg.H4))
+	if cfg.H2 != "" && cfg.H2 != "0" {
+		ipc.WriteString(fmt.Sprintf("h2=%s\n", cfg.H2))
+	}
+	if cfg.H3 != "" && cfg.H3 != "0" {
+		ipc.WriteString(fmt.Sprintf("h3=%s\n", cfg.H3))
+	}
+	if cfg.H4 != "" && cfg.H4 != "0" {
+		ipc.WriteString(fmt.Sprintf("h4=%s\n", cfg.H4))
+	}
+	if cfg.I1 != "" {
+		ipc.WriteString(fmt.Sprintf("i1=%s\n", cfg.I1))
+	}
+	if cfg.I2 != "" {
+		ipc.WriteString(fmt.Sprintf("i2=%s\n", cfg.I2))
+	}
+	if cfg.I3 != "" {
+		ipc.WriteString(fmt.Sprintf("i3=%s\n", cfg.I3))
+	}
+	if cfg.I4 != "" {
+		ipc.WriteString(fmt.Sprintf("i4=%s\n", cfg.I4))
+	}
+	if cfg.I5 != "" {
+		ipc.WriteString(fmt.Sprintf("i5=%s\n", cfg.I5))
 	}
 
 	ipc.WriteString(fmt.Sprintf("public_key=%s\n", pkHex))

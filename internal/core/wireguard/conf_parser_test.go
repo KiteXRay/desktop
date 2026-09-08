@@ -71,10 +71,10 @@ AllowedIPs = 0.0.0.0/0
 	assert.Equal(t, 70, cfg.Jmax)
 	assert.Equal(t, 15, cfg.S1)
 	assert.Equal(t, 30, cfg.S2)
-	assert.Equal(t, int64(1), cfg.H1)
-	assert.Equal(t, int64(2), cfg.H2)
-	assert.Equal(t, int64(3), cfg.H3)
-	assert.Equal(t, int64(4), cfg.H4)
+	assert.Equal(t, "1", cfg.H1)
+	assert.Equal(t, "2", cfg.H2)
+	assert.Equal(t, "3", cfg.H3)
+	assert.Equal(t, "4", cfg.H4)
 
 	uri := cfg.ToURI("MyAWG")
 	assert.Contains(t, uri, "awg://")
@@ -118,10 +118,10 @@ PersistentKeepalive = 25
 	assert.Equal(t, 103, cfg.Jmax)
 	assert.Equal(t, 97, cfg.S1)
 	assert.Equal(t, 21, cfg.S2)
-	assert.Equal(t, int64(1050280201), cfg.H1)
-	assert.Equal(t, int64(2061389574), cfg.H2)
-	assert.Equal(t, int64(201794519), cfg.H3)
-	assert.Equal(t, int64(820786197), cfg.H4)
+	assert.Equal(t, "1050280201", cfg.H1)
+	assert.Equal(t, "2061389574", cfg.H2)
+	assert.Equal(t, "201794519", cfg.H3)
+	assert.Equal(t, "820786197", cfg.H4)
 	assert.Equal(t, "k2Jy+Kby5V+NC/6ZTSXevPsyjcinZ/dillHc1y1BD2g=", cfg.PublicKey)
 	assert.Equal(t, "kUpoIYx7GyKe93xKk4w9SvWBw4y64s3hIlNNm7Cv60c=", cfg.PreSharedKey)
 	assert.Equal(t, "206.223.242.81:51820", cfg.Endpoint)
@@ -165,4 +165,80 @@ func TestParseLink_StandardWireguard(t *testing.T) {
 	assert.Equal(t, "1420", m["Mtu"])
 	assert.Equal(t, "wg-1", m["Remark"])
 }
+
+func TestParseConf_AWG2_RangesAndObfuscation(t *testing.T) {
+	raw := `[Interface]
+Address = 10.8.1.32/32
+DNS = 1.1.1.1, 1.0.0.1
+PrivateKey = dYuAVd/JcBqCyPKSri07a2p8EBEDOD8ZhoexnCGS5HE=
+Jc = 5
+Jmin = 10
+Jmax = 50
+S1 = 125
+S2 = 34
+S3 = 14
+S4 = 8
+H1 = 461798703-1217982642
+H2 = 1925142937-1999846612
+H3 = 2095634297-2109695060
+H4 = 2136986792-2141306962
+I1 = <r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>
+I2 = 
+I3 = 
+I4 = 
+I5 = 
+
+[Peer]
+PublicKey = hrhczy2mUqZnXPmO9/464XnXt1iNKN5Vjhv3pO2grQM=
+PresharedKey = 0PKgmUnQlCEwv0PhOncPlh5Y1HawvXJZTkTzQUVskGM=
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = 2.27.57.42:37801
+PersistentKeepalive = 25
+`
+	assert.True(t, IsConfContent(raw))
+
+	cfg, err := ParseConf(raw)
+	require.NoError(t, err)
+	assert.True(t, cfg.IsAmnezia)
+	assert.Equal(t, 5, cfg.Jc)
+	assert.Equal(t, 10, cfg.Jmin)
+	assert.Equal(t, 50, cfg.Jmax)
+	assert.Equal(t, 125, cfg.S1)
+	assert.Equal(t, 34, cfg.S2)
+	assert.Equal(t, 14, cfg.S3)
+	assert.Equal(t, 8, cfg.S4)
+	assert.Equal(t, "461798703-1217982642", cfg.H1)
+	assert.Equal(t, "1925142937-1999846612", cfg.H2)
+	assert.Equal(t, "2095634297-2109695060", cfg.H3)
+	assert.Equal(t, "2136986792-2141306962", cfg.H4)
+	assert.Equal(t, "<r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>", cfg.I1)
+	assert.Empty(t, cfg.I2)
+	assert.Empty(t, cfg.I3)
+	assert.Empty(t, cfg.I4)
+	assert.Empty(t, cfg.I5)
+
+	uri := cfg.ToURI("awg2-test")
+	assert.True(t, IsAWGLink(uri))
+	assert.Contains(t, uri, "awg://")
+	assert.Contains(t, uri, "s3=14")
+	assert.Contains(t, uri, "s4=8")
+	assert.Contains(t, uri, "h1=461798703-1217982642")
+	assert.Contains(t, uri, "h2=1925142937-1999846612")
+	assert.Contains(t, uri, "h3=2095634297-2109695060")
+	assert.Contains(t, uri, "h4=2136986792-2141306962")
+	assert.Contains(t, uri, "#awg2-test")
+
+	parsedCfg, remark, err := ParseLink(uri)
+	require.NoError(t, err)
+	assert.Equal(t, "awg2-test", remark)
+	assert.Equal(t, cfg.S3, parsedCfg.S3)
+	assert.Equal(t, cfg.S4, parsedCfg.S4)
+	assert.Equal(t, cfg.H1, parsedCfg.H1)
+	assert.Equal(t, cfg.H2, parsedCfg.H2)
+	assert.Equal(t, cfg.H3, parsedCfg.H3)
+	assert.Equal(t, cfg.H4, parsedCfg.H4)
+	assert.Equal(t, cfg.I1, parsedCfg.I1)
+	assert.Empty(t, parsedCfg.I2)
+}
+
 

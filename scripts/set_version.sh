@@ -4,14 +4,14 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Resolution priority: $1 -> $APP_VERSION -> $AppVersion -> $(cat VERSION) -> 1.3.2
+# Resolution priority: $1 -> $APP_VERSION -> $AppVersion -> $(cat VERSION) -> 1.4.0
 TARGET_VERSION="${1:-${APP_VERSION:-${AppVersion:-}}}"
 
 if [ -z "$TARGET_VERSION" ]; then
     if [ -f "$ROOT_DIR/VERSION" ]; then
         TARGET_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
     else
-        TARGET_VERSION="1.3.2"
+        TARGET_VERSION="1.4.0"
     fi
 fi
 
@@ -122,6 +122,16 @@ if os.path.isfile(api_wails_file):
     new_content = re.sub(r"(version:\s*')[^']*(',)", f"\\g<1>{version}\\g<2>", content)
     if new_content != content:
         with open(api_wails_file, "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+# 8. Update frontend/src/components/AboutView.tsx fallback
+about_view_file = os.path.join(root_dir, "frontend", "src", "components", "AboutView.tsx")
+if os.path.isfile(about_view_file):
+    with open(about_view_file, "r", encoding="utf-8") as f:
+        content = f.read()
+    new_content = re.sub(r"(appInfo\?\.version \|\| ')[^']*(')", f"\\g<1>{version}\\g<2>", content)
+    if new_content != content:
+        with open(about_view_file, "w", encoding="utf-8") as f:
             f.write(new_content)
 
 print(f"✓ Synchronized project version to {version} (quad: {quad_version})")
