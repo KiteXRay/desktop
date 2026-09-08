@@ -3,6 +3,7 @@ module github.com/KiteXRay/desktop
 go 1.25.0
 
 require (
+	github.com/amnezia-vpn/amneziawg-go v0.2.19
 	github.com/energye/systray v1.0.3
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/google/uuid v1.6.0
@@ -22,7 +23,6 @@ require (
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
-	github.com/amnezia-vpn/amneziawg-go v0.2.19 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect

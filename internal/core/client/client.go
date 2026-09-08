@@ -112,7 +112,10 @@ type Client struct {
 	xCfg   *xrayproto.GeneralConfig
 	xSrvIP *net.IPAddr
 
-	awgEngine *awg.Engine
+	awgEngine     *awg.Engine
+	isAWG         bool
+	awgLink       string
+	directSocksLn net.Listener
 
 	tunnel      io.ReadWriteCloser
 	tunnelCmd   *exec.Cmd
@@ -277,10 +280,19 @@ func (c *Client) ConnectWithMode(link string, mode TunnelMode) error {
 			return fmt.Errorf("awg endpoint not resolvable: %w", err)
 		}
 		c.xSrvIP = ip
+		c.isAWG = true
+		c.awgLink = link
 
-		c.awgEngine = awg.NewEngine()
-		if err := c.awgEngine.Start(awgCfg, c.cfg.SocksPort); err != nil {
-			return fmt.Errorf("start awg engine: %w", err)
+		helperBin := c.cfg.TunnelBinaryPath
+		if helperBin == "" {
+			helperBin = findTunnelBinary()
+		}
+		// If running in Proxy-only mode or helper binary is unavailable, use in-process netstack engine
+		if mode == TunnelModeProxy || helperBin == "" {
+			c.awgEngine = awg.NewEngine()
+			if err := c.awgEngine.Start(awgCfg, c.cfg.SocksPort); err != nil {
+				return fmt.Errorf("start awg engine: %w", err)
+			}
 		}
 	} else {
 		var err error
@@ -297,6 +309,14 @@ func (c *Client) ConnectWithMode(link string, mode TunnelMode) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	c.stopTunnel = cancel
+
+	// If native AWG TUN is active (no in-process engine), start direct SOCKS5 listener
+	// on 127.0.0.1:10808 to satisfy watchdog and HTTP forwarder (10809).
+	if c.isAWG && c.awgEngine == nil {
+		if err := c.startDirectSocksServer(ctx); err != nil {
+			c.cfg.Logger.Warn("could not start direct socks server", "err", err)
+		}
+	}
 
 	// Always start the public proxy listeners on 127.0.0.1:10808 and 10809
 	c.startProxyForwarders(ctx)
@@ -393,6 +413,9 @@ func (c *Client) setupSystemRoutingWithHelper(ctx context.Context, tunnelBin str
 	args := []string{
 		"--socks5", c.cfg.InboundProxy.String(),
 		"--mode", string(c.cfg.Mode),
+	}
+	if c.isAWG && c.awgLink != "" {
+		args = append(args, "--engine", "awg", "--awg-link", c.awgLink)
 	}
 	if c.cfg.TunnelDNS != "" {
 		args = append(args, "--tun-dns", c.cfg.TunnelDNS)
@@ -690,6 +713,10 @@ func (c *Client) Disconnect(ctx context.Context) error {
 	}
 
 	// 2. Shut down proxy forwarders & XRay core AFTER tunnel routes are removed
+	if c.directSocksLn != nil {
+		_ = c.directSocksLn.Close()
+		c.directSocksLn = nil
+	}
 	if c.httpLn != nil {
 		_ = c.httpLn.Close()
 		c.httpLn = nil
@@ -709,6 +736,8 @@ func (c *Client) Disconnect(ctx context.Context) error {
 		}
 		c.awgEngine = nil
 	}
+	c.isAWG = false
+	c.awgLink = ""
 
 	c.cfg.Logger.Info("Client disconnected successfully")
 
@@ -992,4 +1021,135 @@ func getFreePort() int {
 	}
 	defer ln.Close()
 	return ln.Addr().(*net.TCPAddr).Port
+}
+
+func (c *Client) startDirectSocksServer(ctx context.Context) error {
+	addr := fmt.Sprintf("127.0.0.1:%d", c.cfg.SocksPort)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen direct socks5 %s: %w", addr, err)
+	}
+	c.directSocksLn = ln
+
+	c.proxyWg.Add(1)
+	go func() {
+		defer c.proxyWg.Done()
+		<-ctx.Done()
+		_ = ln.Close()
+	}()
+
+	c.proxyWg.Add(1)
+	go func() {
+		defer c.proxyWg.Done()
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go c.handleDirectSocksConn(ctx, conn)
+		}
+	}()
+
+	c.cfg.Logger.Info("Direct SOCKS5 proxy listening", "addr", addr)
+	return nil
+}
+
+func (c *Client) handleDirectSocksConn(ctx context.Context, clientConn net.Conn) {
+	defer clientConn.Close()
+
+	reader := bufio.NewReader(clientConn)
+
+	// 1. SOCKS5 Greeting
+	ver, err := reader.ReadByte()
+	if err != nil || ver != 0x05 {
+		return
+	}
+	nMethods, err := reader.ReadByte()
+	if err != nil || nMethods == 0 {
+		return
+	}
+	methods := make([]byte, nMethods)
+	if _, err := io.ReadFull(reader, methods); err != nil {
+		return
+	}
+	// Select NO AUTH (0x00)
+	if _, err := clientConn.Write([]byte{0x05, 0x00}); err != nil {
+		return
+	}
+
+	// 2. SOCKS5 Request
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(reader, header); err != nil {
+		return
+	}
+	if header[0] != 0x05 || header[1] != 0x01 { // 0x01 = CONNECT
+		_, _ = clientConn.Write([]byte{0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+		return
+	}
+
+	var host string
+	switch header[3] { // ATYP
+	case 0x01: // IPv4
+		ipv4 := make([]byte, 4)
+		if _, err := io.ReadFull(reader, ipv4); err != nil {
+			return
+		}
+		host = net.IP(ipv4).String()
+	case 0x03: // Domain
+		domainLen, err := reader.ReadByte()
+		if err != nil || domainLen == 0 {
+			return
+		}
+		domain := make([]byte, domainLen)
+		if _, err := io.ReadFull(reader, domain); err != nil {
+			return
+		}
+		host = string(domain)
+	case 0x04: // IPv6
+		ipv6 := make([]byte, 16)
+		if _, err := io.ReadFull(reader, ipv6); err != nil {
+			return
+		}
+		host = net.IP(ipv6).String()
+	default:
+		_, _ = clientConn.Write([]byte{0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+		return
+	}
+
+	portBuf := make([]byte, 2)
+	if _, err := io.ReadFull(reader, portBuf); err != nil {
+		return
+	}
+	port := int(portBuf[0])<<8 | int(portBuf[1])
+	targetAddr := fmt.Sprintf("%s:%d", host, port)
+
+	dialer := &net.Dialer{Timeout: 7 * time.Second}
+	targetConn, err := dialer.DialContext(ctx, "tcp", targetAddr)
+	if err != nil {
+		_, _ = clientConn.Write([]byte{0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+		return
+	}
+	defer targetConn.Close()
+
+	if _, err := clientConn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0}); err != nil {
+		return
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(targetConn, reader)
+		if tc, ok := targetConn.(*net.TCPConn); ok {
+			_ = tc.CloseWrite()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(clientConn, targetConn)
+		if cc, ok := clientConn.(*net.TCPConn); ok {
+			_ = cc.CloseWrite()
+		}
+	}()
+	wg.Wait()
 }

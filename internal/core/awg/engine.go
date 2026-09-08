@@ -91,11 +91,11 @@ func (e *Engine) Start(cfg *wireguard.Config, socksPort int) error {
 	e.tnet = tnet
 
 	// 4. Create AmneziaWG device
-	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), device.NewLogger(device.LogLevelError, "awg: "))
+	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), device.NewLogger(device.LogLevelVerbose, "awg: "))
 	e.dev = dev
 
-	// 5. Build IPC configuration string
-	ipcStr, err := buildIPCConfig(cfg)
+	// 4. Set IPC configuration
+	ipcStr, err := BuildIPCConfig(cfg)
 	if err != nil {
 		e.Close()
 		return fmt.Errorf("build awg ipc config: %w", err)
@@ -219,11 +219,11 @@ func (e *Engine) handleTCPConn(clientConn net.Conn) {
 
 	switch cmd {
 	case byte(socks5.CmdConnect):
-		dialCtx, dialCancel := context.WithTimeout(e.ctx, 15*time.Second)
+		dialCtx, dialCancel := context.WithTimeout(e.ctx, 7*time.Second)
 		targetConn, err := e.tnet.DialContext(dialCtx, "tcp", targetAddr.String())
 		dialCancel()
 		if err != nil {
-			slog.Warn("awg socks5: dial failed", "target", targetAddr.String(), "err", err)
+			slog.Debug("awg socks5: dial failed", "target", targetAddr.String(), "err", err)
 			_, _ = clientConn.Write([]byte{0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 			return
 		}
@@ -309,18 +309,28 @@ func (e *Engine) serveUDP(udpConn *net.UDPConn) {
 			continue
 		}
 
-		addr, payload, err := socks5.DecodeUDPPacket(buf[:n])
+		rawPkt := make([]byte, n)
+		copy(rawPkt, buf[:n])
+
+		addr, payload, err := socks5.DecodeUDPPacket(rawPkt)
 		if err != nil {
 			continue
 		}
 
 		e.bytesRead.Add(int64(len(payload)))
 
-		sessKey := fmt.Sprintf("%s->%s", clientAddr.String(), addr.String())
+		targetAddrCopy := append(socks5.Addr(nil), addr...)
+		clientUDPAddr := &net.UDPAddr{
+			IP:   append([]byte(nil), clientAddr.(*net.UDPAddr).IP...),
+			Port: clientAddr.(*net.UDPAddr).Port,
+			Zone: clientAddr.(*net.UDPAddr).Zone,
+		}
+
+		sessKey := fmt.Sprintf("%s->%s", clientUDPAddr.String(), targetAddrCopy.String())
 		mu.Lock()
 		sess, ok := sessions[sessKey]
 		if !ok {
-			targetConn, err := e.tnet.DialContext(e.ctx, "udp", addr.String())
+			targetConn, err := e.tnet.DialContext(e.ctx, "udp", targetAddrCopy.String())
 			if err != nil {
 				mu.Unlock()
 				continue
@@ -329,20 +339,27 @@ func (e *Engine) serveUDP(udpConn *net.UDPConn) {
 			sessions[sessKey] = sess
 
 			// Goroutine to read back UDP reply from target
-			go func(c net.Conn, returnAddr net.Addr, targetAddr socks5.Addr) {
+			go func(key string, c net.Conn, returnAddr net.Addr, replyTargetAddr socks5.Addr) {
+				defer func() {
+					_ = c.Close()
+					mu.Lock()
+					delete(sessions, key)
+					mu.Unlock()
+				}()
+
 				backBuf := make([]byte, 65535)
 				for {
 					nr, err := c.Read(backBuf)
 					if err != nil {
 						return
 					}
-					pkt, err := socks5.EncodeUDPPacket(targetAddr, backBuf[:nr])
+					pkt, err := socks5.EncodeUDPPacket(replyTargetAddr, backBuf[:nr])
 					if err == nil {
 						e.bytesWritten.Add(int64(nr))
 						_, _ = udpConn.WriteTo(pkt, returnAddr)
 					}
 				}
-			}(targetConn, clientAddr, addr)
+			}(sessKey, targetConn, clientUDPAddr, targetAddrCopy)
 		}
 		sess.lastActive = time.Now()
 		mu.Unlock()
@@ -396,7 +413,8 @@ func (e *Engine) relay(left, right net.Conn) {
 	wg.Wait()
 }
 
-func buildIPCConfig(cfg *wireguard.Config) (string, error) {
+// BuildIPCConfig generates the UAPI IPC configuration string for AmneziaWG device.
+func BuildIPCConfig(cfg *wireguard.Config) (string, error) {
 	skHex, err := keyToHex(cfg.PrivateKey)
 	if err != nil {
 		return "", fmt.Errorf("invalid private key: %w", err)
@@ -457,9 +475,12 @@ func buildIPCConfig(cfg *wireguard.Config) (string, error) {
 	} else {
 		ipc.WriteString("allowed_ip=0.0.0.0/0\nallowed_ip=::/0\n")
 	}
-	if cfg.PersistentKeepalive > 0 {
-		ipc.WriteString(fmt.Sprintf("persistent_keepalive_interval=%d\n", cfg.PersistentKeepalive))
+
+	keepalive := cfg.PersistentKeepalive
+	if keepalive <= 0 {
+		keepalive = 25
 	}
+	ipc.WriteString(fmt.Sprintf("persistent_keepalive_interval=%d\n", keepalive))
 
 	return ipc.String(), nil
 }
@@ -524,7 +545,7 @@ func Ping(cfg *wireguard.Config, timeout time.Duration) int64 {
 	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), device.NewLogger(device.LogLevelError, "awg-ping: "))
 	defer dev.Close()
 
-	ipcStr, err := buildIPCConfig(cfg)
+	ipcStr, err := BuildIPCConfig(cfg)
 	if err != nil {
 		return -1
 	}
@@ -539,22 +560,18 @@ func Ping(cfg *wireguard.Config, timeout time.Duration) int64 {
 	defer cancel()
 
 	start := time.Now()
-	conn, err := tnet.DialContext(ctx, "tcp", "1.1.1.1:80")
+	conn, err := tnet.DialContext(ctx, "tcp", "1.1.1.1:443")
 	if err != nil {
-		return -1
+		conn, err = tnet.DialContext(ctx, "tcp", "cp.cloudflare.com:80")
+		if err != nil {
+			return -1
+		}
 	}
-	defer conn.Close()
+	_ = conn.Close()
 
-	_, err = conn.Write([]byte("HEAD / HTTP/1.1\r\nHost: 1.1.1.1\r\nConnection: close\r\n\r\n"))
-	if err != nil {
-		return -1
+	ms := time.Since(start).Milliseconds()
+	if ms <= 0 {
+		return 1
 	}
-
-	buf := make([]byte, 16)
-	_, err = conn.Read(buf)
-	if err != nil {
-		return -1
-	}
-
-	return time.Since(start).Milliseconds()
+	return ms
 }

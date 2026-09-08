@@ -1,6 +1,9 @@
-## Kite v1.3.0
+## Kite v1.3.1
 
-### 🚀 Features & Enhancements
-- **WireGuard & AmneziaWG (AWG) Protocol Support**: Integrated userspace AmneziaWG engine with SOCKS5 bridge and full support for obfuscation parameters (`Jc`, `Jmin`, `Jmax`, `S1`, `S2`, `H1`–`H4`).
-- **Configuration Import**: Added direct import for WireGuard and AmneziaWG `.conf` files via file picker dialog and URI pasting.
-- **Robust Outbound Probes**: Improved health watchdog and tunnel connectivity verification to avoid DNS deadlock during handshake.
+### 🚀 Improvements & Fixes
+- **Native Direct TUN for WireGuard & AmneziaWG**: Replaced double TCP/IP stack (`tun2socks` + loopback SOCKS5) with direct `amneziawg-go` device bound straight to the OS TUN interface (`kite0`). Eliminates packet aliasing, latency, and CPU overhead in tunnel mode.
+- **Fixed Endless Ping & CPU Spikes on Active Connections**: Replaced redundant in-memory WireGuard device creation during active session pings with direct warm latency probing through the active tunnel, stopping session hijacking and handshake loops.
+- **Fixed `wireguard://` Link Parsing**: Enabled native WireGuard URI query parameter extraction (`address`, `publickey`, `keepalive`, `mtu`, etc.) and safe JSON type decoding.
+- **Fixed UDP Relay Packet Dropping**: Cloned socket address and packet slices in SOCKS5 UDP associate relay to avoid symmetric NAT packet drops.
+- **Upgraded Connectivity Probes**: Updated tunnel verification targets to standard global HTTPS and DNS endpoints (`cp.cloudflare.com:80`, `1.1.1.1:443`).
+

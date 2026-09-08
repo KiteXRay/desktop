@@ -20,9 +20,14 @@ import (
 
 	"github.com/KiteXRay/desktop/internal/osspecific/clean"
 	"github.com/KiteXRay/desktop/internal/osspecific/root"
+	"github.com/amnezia-vpn/amneziawg-go/conn"
+	"github.com/amnezia-vpn/amneziawg-go/device"
+	awgtun "github.com/amnezia-vpn/amneziawg-go/tun"
+	"github.com/goxray/core/awg"
 	"github.com/goxray/core/network/route"
 	"github.com/goxray/core/network/tun"
 	"github.com/goxray/core/pipe2socks"
+	"github.com/goxray/core/wireguard"
 	"github.com/jackpal/gateway"
 )
 
@@ -63,10 +68,38 @@ func (m *meteredTunnel) Write(p []byte) (int, error) {
 	return n, err
 }
 
+type meteredAWGTun struct {
+	awgtun.Device
+	read    *atomic.Int64
+	written *atomic.Int64
+}
+
+func (m *meteredAWGTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
+	n, err := m.Device.Read(bufs, sizes, offset)
+	if n > 0 {
+		var total int64
+		for i := 0; i < n && i < len(sizes); i++ {
+			total += int64(sizes[i])
+		}
+		m.read.Add(total)
+	}
+	return n, err
+}
+
+func (m *meteredAWGTun) Write(bufs [][]byte, offset int) (int, error) {
+	n, err := m.Device.Write(bufs, offset)
+	if n > 0 {
+		m.written.Add(int64(n))
+	}
+	return n, err
+}
+
 func main() {
 	checkFlag := flag.Bool("check", false, "check network privileges and exit (0 = ok, 1 = missing)")
 	cleanFlag := flag.Bool("clean", false, "clean stuck TUN devices and routes and exit")
 	fixPerms := flag.String("fix-perms", "", "recursively fix ownership of path to calling user UID/GID")
+	engine := flag.String("engine", "pipe2socks", "tunnel engine: pipe2socks, awg")
+	awgLink := flag.String("awg-link", "", "WireGuard / AmneziaWG configuration URI link")
 	socks5 := flag.String("socks5", "127.0.0.1:10808", "local SOCKS5 proxy address")
 	tunName := flag.String("tun-name", "", "virtual TUN interface name (empty for OS default)")
 	tunAddr := flag.String("tun-addr", "192.18.0.1/24", "TUN interface IPv4 CIDR")
@@ -143,6 +176,11 @@ func main() {
 			}
 		}
 	}()
+
+	if *engine == "awg" {
+		runAWG(ctx, *tunName, *tunAddr, *tunGw, *tunDNS, *routesStr, *bypassIP, *gatewayIP, *awgLink)
+		return
+	}
 
 	// 1. Create TUN interface
 	ifc, err := tun.New(*tunName, 1500)
@@ -297,6 +335,223 @@ func main() {
 	if errPipe != nil && errPipe != context.Canceled {
 		slog.Error("pipe2socks stopped with error", "err", errPipe)
 	}
+
+	emit(Event{
+		Event:    "stopped",
+		BytesIn:  bytesRead.Load(),
+		BytesOut: bytesWritten.Load(),
+	})
+}
+
+func runAWG(ctx context.Context, tunName string, tunAddr string, tunGw string, tunDNS string, routesStr string, bypassIP string, gatewayIP string, awgLink string) {
+	awgCfg, _, err := wireguard.ParseLink(awgLink)
+	if err != nil {
+		emit(Event{Event: "error", Message: fmt.Sprintf("parse awg link: %v", err)})
+		os.Exit(1)
+	}
+
+	mtu := awgCfg.MTU
+	if mtu <= 0 {
+		mtu = 1420
+	}
+
+	if tunName == "" {
+		tunName = "kite0"
+	}
+
+	tunDev, err := awgtun.CreateTUN(tunName, mtu)
+	if err != nil {
+		emit(Event{Event: "error", Message: fmt.Sprintf("create native TUN device %s: %v", tunName, err)})
+		os.Exit(1)
+	}
+
+	actualName, err := tunDev.Name()
+	if err != nil || actualName == "" {
+		actualName = tunName
+	}
+
+	addrCIDR := tunAddr
+	if awgCfg.Address != "" {
+		for _, part := range strings.Split(awgCfg.Address, ",") {
+			part = strings.TrimSpace(part)
+			if !strings.Contains(part, ":") && part != "" {
+				addrCIDR = part
+				break
+			}
+		}
+	}
+	if !strings.Contains(addrCIDR, "/") {
+		addrCIDR += "/32"
+	}
+
+	tunIP, tunNet, err := net.ParseCIDR(addrCIDR)
+	if err != nil {
+		_ = tunDev.Close()
+		emit(Event{Event: "error", Message: fmt.Sprintf("invalid tun address %q: %v", addrCIDR, err)})
+		os.Exit(1)
+	}
+	tunNet.IP = tunIP
+
+	peerGw := net.ParseIP(tunGw)
+	if peerGw == nil {
+		peerGw = tunIP
+	}
+
+	if err := tun.UpInterface(actualName, tunNet, peerGw); err != nil {
+		_ = tunDev.Close()
+		emit(Event{Event: "error", Message: fmt.Sprintf("bring up interface %s: %v", actualName, err)})
+		os.Exit(1)
+	}
+
+	routeManager, err := route.New()
+	if err != nil {
+		_ = tunDev.Close()
+		emit(Event{Event: "error", Message: fmt.Sprintf("init route manager: %v", err)})
+		os.Exit(1)
+	}
+
+	var bypassOpts *route.Opts
+	endpointIP := bypassIP
+	if endpointIP == "" {
+		endpointHost := awgCfg.Endpoint
+		if h, _, err := net.SplitHostPort(awgCfg.Endpoint); err == nil {
+			endpointHost = h
+		}
+		if ip, err := net.ResolveIPAddr("ip", endpointHost); err == nil {
+			endpointIP = ip.IP.String()
+		}
+	}
+
+	if endpointIP != "" {
+		var gw net.IP
+		if gatewayIP != "" {
+			gw = net.ParseIP(gatewayIP)
+		}
+		if gw == nil {
+			if g, err := gateway.DiscoverGateway(); err == nil && g != nil && !g.IsUnspecified() {
+				gw = g
+			}
+		}
+		if gw != nil {
+			bOpts := route.Opts{
+				Gateway: gw,
+				Routes:  []*route.Addr{route.MustParseAddr(endpointIP + "/32")},
+			}
+			_ = routeManager.Delete(bOpts)
+			if err := routeManager.Add(bOpts); err != nil {
+				slog.Error("failed to add bypass route for awg endpoint", "ip", endpointIP, "gw", gw, "err", err)
+			} else {
+				bypassOpts = &bOpts
+			}
+		}
+	}
+
+	var routesToTUN []*route.Addr
+	for _, r := range strings.Split(routesStr, ",") {
+		r = strings.TrimSpace(r)
+		if r == "" {
+			continue
+		}
+		addr := route.MustParseAddr(r)
+		if addr != nil {
+			routesToTUN = append(routesToTUN, addr)
+		}
+	}
+
+	tunOpts := route.Opts{
+		IfName: actualName,
+		Routes: routesToTUN,
+	}
+
+	if err := routeManager.Add(tunOpts); err != nil {
+		if bypassOpts != nil {
+			_ = routeManager.Delete(*bypassOpts)
+		}
+		_ = tunDev.Close()
+		emit(Event{Event: "error", Message: fmt.Sprintf("add TUN routes: %v", err)})
+		os.Exit(1)
+	}
+
+	var bytesRead, bytesWritten atomic.Int64
+	metered := &meteredAWGTun{
+		Device:  tunDev,
+		read:    &bytesRead,
+		written: &bytesWritten,
+	}
+
+	dev := device.NewDevice(metered, conn.NewDefaultBind(), device.NewLogger(device.LogLevelVerbose, "awg: "))
+
+	ipcStr, err := awg.BuildIPCConfig(awgCfg)
+	if err != nil {
+		if bypassOpts != nil {
+			_ = routeManager.Delete(*bypassOpts)
+		}
+		_ = routeManager.Delete(tunOpts)
+		dev.Close()
+		emit(Event{Event: "error", Message: fmt.Sprintf("build awg ipc config: %v", err)})
+		os.Exit(1)
+	}
+
+	if err := dev.IpcSet(ipcStr); err != nil {
+		if bypassOpts != nil {
+			_ = routeManager.Delete(*bypassOpts)
+		}
+		_ = routeManager.Delete(tunOpts)
+		dev.Close()
+		emit(Event{Event: "error", Message: fmt.Sprintf("set awg ipc: %v", err)})
+		os.Exit(1)
+	}
+
+	if err := dev.Up(); err != nil {
+		if bypassOpts != nil {
+			_ = routeManager.Delete(*bypassOpts)
+		}
+		_ = routeManager.Delete(tunOpts)
+		dev.Close()
+		emit(Event{Event: "error", Message: fmt.Sprintf("awg dev up: %v", err)})
+		os.Exit(1)
+	}
+
+	var cleanOnce sync.Once
+	cleanup := func() {
+		cleanOnce.Do(func() {
+			_ = routeManager.Delete(tunOpts)
+			if bypassOpts != nil {
+				_ = routeManager.Delete(*bypassOpts)
+			}
+			dev.Close()
+		})
+	}
+	defer cleanup()
+
+	go func() {
+		<-ctx.Done()
+		cleanup()
+	}()
+
+	statsTicker := time.NewTicker(1 * time.Second)
+	defer statsTicker.Stop()
+	go func() {
+		for {
+			select {
+			case <-statsTicker.C:
+				emit(Event{
+					Event:    "stats",
+					BytesIn:  bytesRead.Load(),
+					BytesOut: bytesWritten.Load(),
+				})
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	emit(Event{
+		Event:     "ready",
+		Interface: actualName,
+	})
+
+	<-ctx.Done()
 
 	emit(Event{
 		Event:    "stopped",

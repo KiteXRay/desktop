@@ -9,10 +9,10 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-func (i *Interface) up(local *net.IPNet, gw net.IP) error {
-	link, err := netlink.LinkByName(i.Name())
+func UpInterface(name string, local *net.IPNet, gw net.IP) error {
+	link, err := netlink.LinkByName(name)
 	if err != nil {
-		return fmt.Errorf("failed to detect %s interface: %s", i.Name(), err)
+		return fmt.Errorf("failed to detect %s interface: %s", name, err)
 	}
 
 	ipv4Addr := &netlink.Addr{
@@ -21,13 +21,17 @@ func (i *Interface) up(local *net.IPNet, gw net.IP) error {
 	}
 	err = netlink.AddrReplace(link, ipv4Addr)
 	if err != nil {
-		return fmt.Errorf("failed to set peer address on %s interface: %s", i.Name(), err)
+		return fmt.Errorf("failed to set peer address on %s interface: %s", name, err)
 	}
 
 	err = netlink.LinkSetUp(link)
 	if err != nil {
-		return fmt.Errorf("failed to set %s interface up: %s", i.Name(), err)
+		return fmt.Errorf("failed to set %s interface up: %s", name, err)
 	}
 
 	return nil
+}
+
+func (i *Interface) up(local *net.IPNet, gw net.IP) error {
+	return UpInterface(i.Name(), local, gw)
 }

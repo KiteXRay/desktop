@@ -35,7 +35,7 @@ PersistentKeepalive = 25
 	cfg, err := wireguard.ParseConf(raw)
 	require.NoError(t, err)
 
-	ipc, err := buildIPCConfig(cfg)
+	ipc, err := BuildIPCConfig(cfg)
 	require.NoError(t, err)
 
 	assert.Contains(t, ipc, "private_key=")
@@ -56,7 +56,7 @@ PersistentKeepalive = 25
 
 func TestEngine_StartAndCloseIdempotent(t *testing.T) {
 	raw := `[Interface]
-PrivateKey = 6HOx5aRXR5CaLHcu7RaD8VYxPzPCU5TdbMbzdzUaK0g=
+PrivateKey = yAnz5TF+KmRqDCBgMW10geXdDaFnBP9TeQoHGnRzhlk=
 Address = 10.8.0.8/24
 DNS = 1.1.1.1, 1.0.0.1
 Jc = 5
@@ -70,8 +70,8 @@ H3 = 201794519
 H4 = 820786197
 
 [Peer]
-PublicKey = k2Jy+Kby5V+NC/6ZTSXevPsyjcinZ/dillHc1y1BD2g=
-Endpoint = 206.223.242.81:51820
+PublicKey = xIxIPEwq9uvWdyNG6lwA6n86d2k4fAenJm0+vV9/wCc=
+Endpoint = 198.51.100.25:51820
 AllowedIPs = 0.0.0.0/0
 `
 	cfg, err := wireguard.ParseConf(raw)
@@ -95,7 +95,7 @@ AllowedIPs = 0.0.0.0/0
 
 func TestEngine_SOCKS5Handshake(t *testing.T) {
 	raw := `[Interface]
-PrivateKey = 6HOx5aRXR5CaLHcu7RaD8VYxPzPCU5TdbMbzdzUaK0g=
+PrivateKey = yAnz5TF+KmRqDCBgMW10geXdDaFnBP9TeQoHGnRzhlk=
 Address = 10.8.0.8/24
 DNS = 1.1.1.1, 1.0.0.1
 Jc = 5
@@ -109,8 +109,8 @@ H3 = 201794519
 H4 = 820786197
 
 [Peer]
-PublicKey = k2Jy+Kby5V+NC/6ZTSXevPsyjcinZ/dillHc1y1BD2g=
-Endpoint = 206.223.242.81:51820
+PublicKey = xIxIPEwq9uvWdyNG6lwA6n86d2k4fAenJm0+vV9/wCc=
+Endpoint = 198.51.100.25:51820
 AllowedIPs = 0.0.0.0/0
 `
 	cfg, err := wireguard.ParseConf(raw)

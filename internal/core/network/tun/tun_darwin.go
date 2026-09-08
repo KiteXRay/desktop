@@ -13,7 +13,8 @@ import (
 // up brings the TUN interface up and assign addresses for it.
 //
 // TODO: IPV6
-func (i *Interface) up(local *net.IPNet, gw net.IP) error {
+// UpInterface brings the named TUN interface up and assigns addresses for it on darwin.
+func UpInterface(name string, local *net.IPNet, gw net.IP) error {
 	// https://github.com/freebsd/freebsd-src/blob/de1aa3dab23c06fec962a14da3e7b4755c5880cf/sys/net/if.h#L444
 	type ifAliasReq struct {
 		Name      [unix.IFNAMSIZ]byte /* if name, e.g. "utun123" */
@@ -40,8 +41,11 @@ func (i *Interface) up(local *net.IPNet, gw net.IP) error {
 		return [4]byte{ip4[0], ip4[1], ip4[2], ip4[3]}
 	}
 
+	var nameBytes [unix.IFNAMSIZ]byte
+	copy(nameBytes[:len(name)], name)
+
 	ifr := ifAliasReq{
-		Name: i.nameBytes(),
+		Name: nameBytes,
 		// Local IP
 		Addr: unix.RawSockaddrInet4{
 			Len:    unix.SizeofSockaddrInet4,
@@ -76,7 +80,7 @@ func (i *Interface) up(local *net.IPNet, gw net.IP) error {
 		uintptr(unsafe.Pointer(&ifr)),
 	)
 	if errno != 0 {
-		return fmt.Errorf("set address on %s interface: %v", i.Name(), errno)
+		return fmt.Errorf("set address on %s interface: %v", name, errno)
 	}
 
 	// Bring interface UP
@@ -93,8 +97,13 @@ func (i *Interface) up(local *net.IPNet, gw net.IP) error {
 		uintptr(unsafe.Pointer(&ifrFlags)),
 	)
 	if errno != 0 {
-		return fmt.Errorf("activate %s interface: %v", i.Name(), errno)
+		return fmt.Errorf("activate %s interface: %v", name, errno)
 	}
 
 	return nil
+}
+
+// up brings the TUN interface up and assign addresses for it.
+func (i *Interface) up(local *net.IPNet, gw net.IP) error {
+	return UpInterface(i.Name(), local, gw)
 }

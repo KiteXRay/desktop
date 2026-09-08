@@ -142,3 +142,27 @@ PersistentKeepalive = 25
 	assert.Equal(t, cfg.H4, parsedCfg.H4)
 	assert.Equal(t, cfg.Endpoint, parsedCfg.Endpoint)
 }
+
+func TestParseLink_StandardWireguard(t *testing.T) {
+	rawLink := "wireguard://gIXzCVfmpgvFDAO96zlS99ZxRjTY5g8vMor5q7Te0FI%3D@185.102.139.121:21381?publickey=HSF%2Bi9%2BLBE71WEAZeIisrPHQzH4UHCkh8uOrFpIvJzA%3D&address=10.0.0.2%2F32&mtu=1420#wg-1"
+	assert.True(t, IsAWGLink(rawLink))
+	assert.True(t, IsWireguardLink(rawLink))
+
+	cfg, remark, err := ParseLink(rawLink)
+	require.NoError(t, err)
+	assert.Equal(t, "wg-1", remark)
+	assert.False(t, cfg.IsAmnezia)
+	assert.Equal(t, "gIXzCVfmpgvFDAO96zlS99ZxRjTY5g8vMor5q7Te0FI=", cfg.PrivateKey)
+	assert.Equal(t, "HSF+i9+LBE71WEAZeIisrPHQzH4UHCkh8uOrFpIvJzA=", cfg.PublicKey)
+	assert.Equal(t, "185.102.139.121:21381", cfg.Endpoint)
+	assert.Equal(t, "10.0.0.2/32", cfg.Address)
+	assert.Equal(t, 1420, cfg.MTU)
+
+	m := cfg.ToMap(remark)
+	assert.Equal(t, "wireguard", m["Protocol"])
+	assert.Equal(t, "185.102.139.121", m["Address"])
+	assert.Equal(t, "21381", m["Port"])
+	assert.Equal(t, "1420", m["Mtu"])
+	assert.Equal(t, "wg-1", m["Remark"])
+}
+

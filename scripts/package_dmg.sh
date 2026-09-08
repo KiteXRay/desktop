@@ -2,7 +2,7 @@
 set -e
 
 # Usage: ./scripts/package_dmg.sh [version] [arch]
-VERSION="${1:-1.3.0}"
+VERSION="${1:-1.3.1}"
 VERSION="${VERSION#v}"
 ARCH="${2:-universal}"
 

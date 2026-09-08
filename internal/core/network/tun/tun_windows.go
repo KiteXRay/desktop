@@ -90,8 +90,8 @@ func New(name string, MTU int) (*Interface, error) {
 	}, nil
 }
 
-// Up brings the TUN interface up and assigns IPv4 address and netmask.
-func (i *Interface) Up(local *net.IPNet, gw net.IP) error {
+// UpInterface brings the named TUN interface up and assigns IPv4 address and netmask on Windows.
+func UpInterface(name string, local *net.IPNet, gw net.IP) error {
 	mask := "255.255.255.0"
 	if local.Mask != nil && len(local.Mask) == 4 {
 		m := fmt.Sprintf("%d.%d.%d.%d", local.Mask[0], local.Mask[1], local.Mask[2], local.Mask[3])
@@ -103,7 +103,7 @@ func (i *Interface) Up(local *net.IPNet, gw net.IP) error {
 
 	// Use netsh to configure the static IP and netmask on the adapter
 	cmd := exec.Command("netsh", "interface", "ipv4", "set", "address",
-		fmt.Sprintf("name=%s", i.name),
+		fmt.Sprintf("name=%s", name),
 		"source=static",
 		fmt.Sprintf("addr=%s", local.IP.String()),
 		fmt.Sprintf("mask=%s", mask),
@@ -115,6 +115,15 @@ func (i *Interface) Up(local *net.IPNet, gw net.IP) error {
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		slog.Warn("netsh set address", "err", err, "output", string(out))
+	}
+
+	return nil
+}
+
+// Up brings the TUN interface up and assigns IPv4 address and netmask.
+func (i *Interface) Up(local *net.IPNet, gw net.IP) error {
+	if err := UpInterface(i.name, local, gw); err != nil {
+		return err
 	}
 
 	// Set MTU

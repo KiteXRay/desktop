@@ -91,3 +91,21 @@ func TestList_MoveAndSwapAndID(t *testing.T) {
 	require.Equal(t, "id-3", all[0].ID())
 	require.Equal(t, "id-1", all[1].ID())
 }
+
+func TestList_AddWireguard(t *testing.T) {
+	c := New()
+	wgLink := "wireguard://gIXzCVfmpgvFDAO96zlS99ZxRjTY5g8vMor5q7Te0FI%3D@185.102.139.121:21381?publickey=HSF%2Bi9%2BLBE71WEAZeIisrPHQzH4UHCkh8uOrFpIvJzA%3D&address=10.0.0.2%2F32&mtu=1420#wg-1"
+
+	require.NoError(t, c.AddItem("wg-1", wgLink))
+	require.Len(t, c.All(), 1)
+	item := c.All()[0]
+	require.Equal(t, "wg-1", item.Label())
+	require.Equal(t, wgLink, item.Link())
+
+	cfg := item.XRayConfig()
+	require.Equal(t, "wireguard", cfg["Protocol"])
+	require.Equal(t, "185.102.139.121", cfg["Address"])
+	require.Equal(t, "21381", cfg["Port"])
+	require.Equal(t, "1420", cfg["Mtu"])
+}
+

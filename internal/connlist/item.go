@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
@@ -225,8 +226,28 @@ func (c *Item) xrayBaseConfigToMap(proto xrayproto.Protocol) (map[string]string,
 	}
 
 	// Unmarshalling it will add protocol-specific values to the map.
-	if err := json.Unmarshal(b, &xmap); err != nil {
+	var rawMap map[string]any
+	if err := json.Unmarshal(b, &rawMap); err != nil {
 		return nil, fmt.Errorf("unmarshal xray protocol: %w", err)
+	}
+	for k, v := range rawMap {
+		if v == nil {
+			continue
+		}
+		switch val := v.(type) {
+		case string:
+			xmap[k] = val
+		case float64:
+			if val == float64(int64(val)) {
+				xmap[k] = strconv.FormatInt(int64(val), 10)
+			} else {
+				xmap[k] = strconv.FormatFloat(val, 'f', -1, 64)
+			}
+		case bool:
+			xmap[k] = strconv.FormatBool(val)
+		default:
+			xmap[k] = fmt.Sprintf("%v", val)
+		}
 	}
 
 	// Keys that duplicate base protocol values.

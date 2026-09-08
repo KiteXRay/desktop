@@ -383,9 +383,9 @@ func buildLinkFromMap(cfg map[string]string) (string, error) {
 		return "", fmt.Errorf("unsupported protocol: %s", proto)
 	}
 
-	if proto == "awg" || proto == "amneziawg" {
+	if proto == "wireguard" || proto == "awg" || proto == "amneziawg" {
 		if _, _, err := wireguard.ParseLink(link); err != nil {
-			return "", fmt.Errorf("invalid amneziawg link: %w", err)
+			return "", fmt.Errorf("invalid wireguard link: %w", err)
 		}
 		return link, nil
 	}

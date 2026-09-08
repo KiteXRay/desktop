@@ -245,16 +245,15 @@ func (c *Config) ToURI(label string) string {
 	return uri
 }
 
-// IsAWGLink checks whether a link is an AmneziaWG URI or has AWG obfuscation parameters.
+// IsAWGLink checks whether a link is a WireGuard or AmneziaWG URI.
 func IsAWGLink(link string) bool {
 	l := strings.ToLower(strings.TrimSpace(link))
-	if strings.HasPrefix(l, "awg://") {
-		return true
-	}
-	if strings.HasPrefix(l, "wireguard://") && (strings.Contains(l, "jc=") || strings.Contains(l, "s1=") || strings.Contains(l, "h1=")) {
-		return true
-	}
-	return false
+	return strings.HasPrefix(l, "awg://") || strings.HasPrefix(l, "wireguard://")
+}
+
+// IsWireguardLink checks whether a link is a WireGuard or AmneziaWG URI.
+func IsWireguardLink(link string) bool {
+	return IsAWGLink(link)
 }
 
 // ParseLink parses an awg:// or wireguard:// link into a Config and label.
@@ -284,7 +283,31 @@ func ParseLink(rawLink string) (*Config, string, error) {
 		Address:      q.Get("address"),
 		PreSharedKey: q.Get("presharedkey"),
 		Reserved:     q.Get("reserved"),
+		DNS:          q.Get("dns"),
+		AllowedIPs:   q.Get("allowedips"),
 		MTU:          1420,
+	}
+
+	if cfg.Address == "" {
+		cfg.Address = q.Get("ip")
+	}
+	if cfg.AllowedIPs == "" {
+		cfg.AllowedIPs = q.Get("allowed_ips")
+	}
+	if cfg.PreSharedKey == "" {
+		cfg.PreSharedKey = q.Get("preshared_key")
+	}
+	if cfg.PreSharedKey == "" {
+		cfg.PreSharedKey = q.Get("psk")
+	}
+	if ka := q.Get("persistentkeepalive"); ka != "" {
+		if v, err := strconv.Atoi(ka); err == nil && v > 0 {
+			cfg.PersistentKeepalive = v
+		}
+	} else if ka := q.Get("keepalive"); ka != "" {
+		if v, err := strconv.Atoi(ka); err == nil && v > 0 {
+			cfg.PersistentKeepalive = v
+		}
 	}
 
 	if scheme == "awg" {

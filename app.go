@@ -633,7 +633,7 @@ func (a *App) ResetTraffic(id string) error {
 	return nil
 }
 
-var appVersion = "1.3.0"
+var appVersion = "1.3.1"
 
 func (a *App) GetAppInfo() AppInfoDTO {
 	return AppInfoDTO{
@@ -778,6 +778,40 @@ func pingRoutedConnection(link string, timeout time.Duration) (latency int64) {
 	return 1
 }
 
+func (a *App) pingActiveConnection(timeout time.Duration) int64 {
+	targets := []string{"cp.cloudflare.com:80", "1.1.1.1:443", "connectivitycheck.gstatic.com:80"}
+
+	// 1. Try dialing through SOCKS5 proxy (127.0.0.1:10808)
+	if dialer, err := socks5proxy.SOCKS5("tcp", fmt.Sprintf("127.0.0.1:%d", client.DefaultSocksPort), nil, &net.Dialer{Timeout: timeout}); err == nil {
+		for _, target := range targets {
+			start := time.Now()
+			if conn, err := dialer.Dial("tcp", target); err == nil {
+				_ = conn.Close()
+				ms := time.Since(start).Milliseconds()
+				if ms <= 0 {
+					return 1
+				}
+				return ms
+			}
+		}
+	}
+
+	// 2. Fallback to direct TCP dial (works when system default route points to TUN)
+	for _, target := range targets {
+		start := time.Now()
+		if conn, err := net.DialTimeout("tcp", target, timeout); err == nil {
+			_ = conn.Close()
+			ms := time.Since(start).Milliseconds()
+			if ms <= 0 {
+				return 1
+			}
+			return ms
+		}
+	}
+
+	return -1
+}
+
 func (a *App) PingConnection(id string) int64 {
 	item := a.items.FindByID(id)
 	if item == nil {
@@ -786,7 +820,14 @@ func (a *App) PingConnection(id string) int64 {
 	if a.ctx != nil {
 		wruntime.EventsEmit(a.ctx, "ping:start", id)
 	}
-	res := pingRoutedConnection(item.Link(), 2500*time.Millisecond)
+
+	var res int64
+	if item.Active() {
+		res = a.pingActiveConnection(2500 * time.Millisecond)
+	} else {
+		res = pingRoutedConnection(item.Link(), 2500*time.Millisecond)
+	}
+
 	if a.ctx != nil {
 		wruntime.EventsEmit(a.ctx, "ping:result", PingResultDTO{
 			ID:     id,
@@ -813,7 +854,13 @@ func (a *App) PingAll() map[string]int64 {
 		if a.ctx != nil {
 			wruntime.EventsEmit(a.ctx, "ping:start", id)
 		}
-		latency := pingRoutedConnection(link, 2500*time.Millisecond)
+
+		var latency int64
+		if itm.Active() {
+			latency = a.pingActiveConnection(2500 * time.Millisecond)
+		} else {
+			latency = pingRoutedConnection(link, 2500*time.Millisecond)
+		}
 		results[id] = latency
 
 		if a.ctx != nil {
@@ -1456,7 +1503,7 @@ func (a *App) verifyTunnelConnectivity(timeout time.Duration) bool {
 		return false
 	}
 
-	targets := []string{"1.1.1.1:80", "1.0.0.1:80", "1.1.1.1:443", "8.8.8.8:53", "cp.cloudflare.com:80"}
+	targets := []string{"1.1.1.1:443", "8.8.8.8:53", "1.1.1.1:53", "cp.cloudflare.com:80", "connectivitycheck.gstatic.com:80"}
 	if cd, ok := dialer.(socks5proxy.ContextDialer); ok {
 		for _, target := range targets {
 			subCtx, subCancel := context.WithTimeout(context.Background(), timeout)

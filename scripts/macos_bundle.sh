@@ -24,4 +24,4 @@ if command -v iconutil >/dev/null 2>&1 && command -v sips >/dev/null 2>&1; then
 fi
 
 wails build -platform darwin/universal "$@"
-"${SCRIPT_DIR}/package_dmg.sh" "1.3.0" "universal"
+"${SCRIPT_DIR}/package_dmg.sh" "1.3.1" "universal"

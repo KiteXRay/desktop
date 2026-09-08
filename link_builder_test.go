@@ -179,3 +179,24 @@ func TestApp_ImportActualFile(t *testing.T) {
 	assert.Equal(t, "206.223.242.81", dto.Address)
 	assert.Equal(t, "51820", dto.Port)
 }
+
+func TestApp_AddStandardWireguardLink(t *testing.T) {
+	app := NewApp()
+	rawLink := "wireguard://gIXzCVfmpgvFDAO96zlS99ZxRjTY5g8vMor5q7Te0FI%3D@185.102.139.121:21381?publickey=HSF%2Bi9%2BLBE71WEAZeIisrPHQzH4UHCkh8uOrFpIvJzA%3D&address=10.0.0.2%2F32&mtu=1420#wg-1"
+
+	dto, err := app.AddConnection(rawLink, "wg-1")
+	require.NoError(t, err)
+	require.NotNil(t, dto)
+	assert.Equal(t, "wg-1", dto.Label)
+	assert.Equal(t, "wireguard", dto.Protocol)
+	assert.Equal(t, "185.102.139.121", dto.Address)
+	assert.Equal(t, "21381", dto.Port)
+
+	preview, err := app.ParseLinkPreview(rawLink)
+	require.NoError(t, err)
+	assert.Equal(t, "wireguard", preview["Protocol"])
+	assert.Equal(t, "185.102.139.121", preview["Address"])
+	assert.Equal(t, "21381", preview["Port"])
+	assert.Equal(t, "1420", preview["Mtu"])
+}
+
