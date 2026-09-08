@@ -30,7 +30,11 @@ if [ ! -f icon/assets/icon_default.ico ] || [ ! -f icon/assets/icon_active.ico ]
     python3 -c "from PIL import Image; Image.open('icon/assets/icon_default.png').convert('RGBA').save('icon/assets/icon_default.ico', format='ICO', sizes=[(16,16),(20,20),(24,24),(32,32),(48,48),(64,64)]); Image.open('icon/assets/icon_active.png').convert('RGBA').save('icon/assets/icon_active.ico', format='ICO', sizes=[(16,16),(20,20),(24,24),(32,32),(48,48),(64,64)])"
 fi
 
-echo "==> Cross-compiling for Windows (x64) with Wails..."
+echo "==> Synchronizing project version..."
+"${SCRIPT_DIR}/set_version.sh" "${APP_VERSION:-${AppVersion:-}}"
+APP_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
+
+echo "==> Cross-compiling for Windows (x64) with Wails (v${APP_VERSION})..."
 export CC=x86_64-w64-mingw32-gcc
 export CXX=x86_64-w64-mingw32-g++
 wails_bin="$HOME/go/bin/wails"
@@ -38,7 +42,7 @@ if [ ! -f "$wails_bin" ]; then
     wails_bin="wails"
 fi
 
-BUILD_ARGS=(-platform windows/amd64 -o kite.exe)
+BUILD_ARGS=(-platform windows/amd64 -o kite.exe -ldflags "-X main.appVersion=${APP_VERSION}")
 if command -v makensis >/dev/null 2>&1; then
     echo "==> makensis detected: will bundle Windows NSIS Installer..."
     BUILD_ARGS+=(-nsis)

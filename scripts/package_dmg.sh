@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 set -e
 
-# Usage: ./scripts/package_dmg.sh [version] [arch]
-VERSION="${1:-1.3.2}"
-VERSION="${VERSION#v}"
-ARCH="${2:-universal}"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Usage: ./scripts/package_dmg.sh [version] [arch]
+VERSION="${1:-${APP_VERSION:-${AppVersion:-}}}"
+if [ -z "$VERSION" ] && [ -f "$ROOT_DIR/VERSION" ]; then
+    VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
+fi
+VERSION="${VERSION:-1.3.2}"
+VERSION="${VERSION#v}"
+ARCH="${2:-universal}"
 BIN_DIR="${ROOT_DIR}/build/bin"
 DMG_NAME="kite-macos-${ARCH}.dmg"
 OUTPUT_DMG="${BIN_DIR}/${DMG_NAME}"

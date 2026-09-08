@@ -4,7 +4,11 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-VERSION="${1:-1.1.0}"
+VERSION="${1:-${APP_VERSION:-${AppVersion:-}}}"
+if [ -z "$VERSION" ] && [ -f "$ROOT_DIR/VERSION" ]; then
+    VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
+fi
+VERSION="${VERSION:-1.3.2}"
 VERSION="${VERSION#v}" # remove leading 'v'
 ARCH="${2:-amd64}"
 

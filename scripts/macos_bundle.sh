@@ -23,5 +23,9 @@ if command -v iconutil >/dev/null 2>&1 && command -v sips >/dev/null 2>&1; then
     rm -rf "${ROOT_DIR}/build/icon.iconset"
 fi
 
-wails build -platform darwin/universal "$@"
-"${SCRIPT_DIR}/package_dmg.sh" "1.3.2" "universal"
+echo "==> Synchronizing project version..."
+"${SCRIPT_DIR}/set_version.sh" "${APP_VERSION:-${AppVersion:-}}"
+APP_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
+
+wails build -platform darwin/universal -ldflags "-X main.appVersion=${APP_VERSION}" "$@"
+"${SCRIPT_DIR}/package_dmg.sh" "${APP_VERSION}" "universal"

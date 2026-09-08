@@ -40,6 +40,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.3.2"; fi
+          ./scripts/set_version.sh "${VERSION}"
           wails build -tags webkit2_41 -skipbindings -ldflags "-X main.appVersion=${VERSION}"
           go build -ldflags "-s -w" -o build/bin/kite-tunnel ./cmd/kite-tunnel
           if [ -f build/bin/Kite ] && [ ! -f build/bin/kite ]; then
@@ -124,6 +125,7 @@ jobs:
         run: |
           $ver = "${env:GITHUB_REF_NAME}".TrimStart("v")
           if (-not $ver -or $ver -eq "main") { $ver = "1.3.2" }
+          bash ./scripts/set_version.sh "$ver"
           wails build -platform windows/amd64 -nsis -skipbindings -ldflags "-X main.appVersion=$ver"
           $inst = Get-ChildItem -Path "build\bin" -Filter "*installer.exe" | Select-Object -First 1
           if ($inst) {
@@ -192,6 +194,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.3.2"; fi
+          ./scripts/set_version.sh "${VERSION}"
           wails build -platform darwin/universal -skipbindings -ldflags "-X main.appVersion=${VERSION}"
           CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w" -o build/bin/kite-tunnel-amd64 ./cmd/kite-tunnel
           CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o build/bin/kite-tunnel-arm64 ./cmd/kite-tunnel
