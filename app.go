@@ -451,6 +451,7 @@ func (a *App) connectInternal(id string) error {
 	}
 	devIP, dns := a.saveFile.GetTunnelSettings()
 	target.SetTunnelSettings(devIP, dns)
+	target.SetBypassIPs(a.collectAllProfileIPs())
 	if err := target.ConnectWithMode(tMode); err != nil {
 		slog.Error("failed to connect", "error", err)
 		a.SetActiveID("")
@@ -778,34 +779,146 @@ func pingRoutedConnection(link string, timeout time.Duration) (latency int64) {
 	return 1
 }
 
+func extractServerHost(link string) (string, error) {
+	if wireguard.IsAWGLink(link) {
+		cfg, _, err := wireguard.ParseLink(link)
+		if err != nil {
+			return "", err
+		}
+		host := cfg.Endpoint
+		if h, _, err := net.SplitHostPort(cfg.Endpoint); err == nil {
+			host = h
+		}
+		return host, nil
+	}
+	proto, err := (&xray3.Core{}).CreateProtocol(link)
+	if err != nil {
+		return "", err
+	}
+	if err := proto.Parse(); err != nil {
+		return "", err
+	}
+	gen := proto.ConvertToGeneralConfig()
+	if gen.Address != "" {
+		return gen.Address, nil
+	}
+	return "", errors.New("no address found in link")
+}
+
+func resolveServerIP(host string) (string, error) {
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String(), nil
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return "", fmt.Errorf("resolve %s: %w", host, err)
+	}
+	for _, ip := range ips {
+		if ipv4 := ip.To4(); ipv4 != nil {
+			return ipv4.String(), nil
+		}
+	}
+	return ips[0].String(), nil
+}
+
+func (a *App) collectAllProfileIPs() []string {
+	seen := make(map[string]bool)
+	var ips []string
+	for _, itm := range a.items.All() {
+		if itm == nil {
+			continue
+		}
+		host, err := extractServerHost(itm.Link())
+		if err != nil {
+			continue
+		}
+		ip, err := resolveServerIP(host)
+		if err != nil {
+			continue
+		}
+		if !seen[ip] {
+			seen[ip] = true
+			ips = append(ips, ip)
+		}
+	}
+	return ips
+}
+
 func (a *App) pingActiveConnection(timeout time.Duration) int64 {
-	targets := []string{"cp.cloudflare.com:80", "1.1.1.1:443", "connectivitycheck.gstatic.com:80"}
+	targets := []string{"https://www.google.com/generate_204", "http://cp.cloudflare.com/generate_204"}
 
 	// 1. Try dialing through SOCKS5 proxy (127.0.0.1:10808)
 	if dialer, err := socks5proxy.SOCKS5("tcp", fmt.Sprintf("127.0.0.1:%d", client.DefaultSocksPort), nil, &net.Dialer{Timeout: timeout}); err == nil {
-		for _, target := range targets {
-			start := time.Now()
-			if conn, err := dialer.Dial("tcp", target); err == nil {
-				_ = conn.Close()
-				ms := time.Since(start).Milliseconds()
-				if ms <= 0 {
-					return 1
+		if cd, ok := dialer.(socks5proxy.ContextDialer); ok {
+			httpClient := &http.Client{
+				Transport: &http.Transport{
+					DialContext:       cd.DialContext,
+					DisableKeepAlives: false,
+				},
+				Timeout: timeout,
+			}
+			for _, target := range targets {
+				ctx, cancel := context.WithTimeout(context.Background(), timeout)
+				req, err := http.NewRequestWithContext(ctx, "HEAD", target, nil)
+				if err == nil {
+					t0 := time.Now()
+					resp, err := httpClient.Do(req)
+					cancel()
+					if err == nil {
+						_ = resp.Body.Close()
+						firstMs := time.Since(t0).Milliseconds()
+
+						// Warm 1-RTT measurement over established tunnel connection
+						ctxWarm, cancelWarm := context.WithTimeout(context.Background(), timeout)
+						reqWarm, errWarm := http.NewRequestWithContext(ctxWarm, "HEAD", target, nil)
+						if errWarm == nil {
+							tWarm := time.Now()
+							respWarm, errWarm := httpClient.Do(reqWarm)
+							cancelWarm()
+							if errWarm == nil {
+								_ = respWarm.Body.Close()
+								warmMs := time.Since(tWarm).Milliseconds()
+								if warmMs > 0 {
+									return warmMs
+								}
+							}
+						} else {
+							cancelWarm()
+						}
+
+						if firstMs > 0 {
+							return firstMs
+						}
+						return 1
+					}
+				} else {
+					cancel()
 				}
-				return ms
 			}
 		}
 	}
 
-	// 2. Fallback to direct TCP dial (works when system default route points to TUN)
+	// 2. Direct HTTP dial fallback (works when system default route points to TUN)
+	directClient := &http.Client{
+		Timeout: timeout,
+	}
 	for _, target := range targets {
-		start := time.Now()
-		if conn, err := net.DialTimeout("tcp", target, timeout); err == nil {
-			_ = conn.Close()
-			ms := time.Since(start).Milliseconds()
-			if ms <= 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		req, err := http.NewRequestWithContext(ctx, "HEAD", target, nil)
+		if err == nil {
+			t0 := time.Now()
+			resp, err := directClient.Do(req)
+			cancel()
+			if err == nil {
+				_ = resp.Body.Close()
+				firstMs := time.Since(t0).Milliseconds()
+				if firstMs > 0 {
+					return firstMs
+				}
 				return 1
 			}
-			return ms
+		} else {
+			cancel()
 		}
 	}
 

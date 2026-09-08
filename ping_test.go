@@ -28,3 +28,24 @@ func TestApp_PingConnection_NotFound(t *testing.T) {
 	latency := app.PingConnection("non-existent-id")
 	assert.Equal(t, int64(-1), latency)
 }
+
+func TestExtractServerHost(t *testing.T) {
+	vlessLink := "vless://h1px412i-9138-s9m5-9b86-d47d74dd8541@198.51.100.1:443?type=tcp&security=none#Test"
+	host, err := extractServerHost(vlessLink)
+	assert.NoError(t, err)
+	assert.Equal(t, "198.51.100.1", host)
+
+	ip, err := resolveServerIP("198.51.100.1")
+	assert.NoError(t, err)
+	assert.Equal(t, "198.51.100.1", ip)
+
+	_, err = extractServerHost("invalid://link")
+	assert.Error(t, err)
+}
+
+func TestPingActiveConnection_Disconnected(t *testing.T) {
+	app := NewApp()
+	latency := app.pingActiveConnection(100 * time.Millisecond)
+	assert.Equal(t, int64(-1), latency)
+}
+

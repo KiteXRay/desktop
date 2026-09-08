@@ -30,6 +30,7 @@ type Client interface {
 	BytesRead() int
 	BytesWritten() int
 	SetTunnelSettings(deviceIP, dns string)
+	SetBypassIPs(ips []string)
 	SetBridgeDialerFactory(fn func(defaultSocksAddr string) tproxy.Dialer)
 }
 
@@ -182,6 +183,14 @@ func (c *Item) SetTunnelSettings(deviceIP, dns string) {
 	defer c.mu.Unlock()
 	if c.client != nil {
 		c.client.SetTunnelSettings(deviceIP, dns)
+	}
+}
+
+func (c *Item) SetBypassIPs(ips []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.client != nil {
+		c.client.SetBypassIPs(ips)
 	}
 }
 

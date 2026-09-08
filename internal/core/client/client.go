@@ -98,6 +98,7 @@ type Config struct {
 	TunnelDeviceIP      string
 	TunnelDNS           string
 	TunnelBinaryPath    string
+	BypassIPs           []string
 	BridgeDialerFactory func(defaultSocksAddr string) tproxy.Dialer
 }
 
@@ -435,6 +436,9 @@ func (c *Client) setupSystemRoutingWithHelper(ctx context.Context, tunnelBin str
 	}
 	if c.xSrvIP != nil {
 		args = append(args, "--bypass-ip", c.xSrvIP.String())
+	}
+	if len(c.cfg.BypassIPs) > 0 {
+		args = append(args, "--bypass-ips", strings.Join(c.cfg.BypassIPs, ","))
 	}
 	if c.cfg.GatewayIP != nil {
 		args = append(args, "--gateway-ip", c.cfg.GatewayIP.String())
@@ -1153,3 +1157,9 @@ func (c *Client) handleDirectSocksConn(ctx context.Context, clientConn net.Conn)
 	}()
 	wg.Wait()
 }
+
+// SetBypassIPs configures list of remote server IPs that bypass the VPN tunnel.
+func (c *Client) SetBypassIPs(ips []string) {
+	c.cfg.BypassIPs = ips
+}
+

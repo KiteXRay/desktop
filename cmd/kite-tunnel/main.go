@@ -94,6 +94,57 @@ func (m *meteredAWGTun) Write(bufs [][]byte, offset int) (int, error) {
 	return n, err
 }
 
+func parseBypassIPs(bypassIP string, bypassIPs string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s != "" && !seen[s] {
+			if ip := net.ParseIP(s); ip != nil {
+				seen[s] = true
+				result = append(result, s)
+			}
+		}
+	}
+	if bypassIP != "" {
+		add(bypassIP)
+	}
+	if bypassIPs != "" {
+		for _, p := range strings.Split(bypassIPs, ",") {
+			add(p)
+		}
+	}
+	return result
+}
+
+func setupBypassRoutes(routeManager *route.Route, ips []string, gw net.IP) []*route.Opts {
+	var opts []*route.Opts
+	if gw == nil || len(ips) == 0 {
+		return opts
+	}
+	for _, ipStr := range ips {
+		bOpts := route.Opts{
+			Gateway: gw,
+			Routes:  []*route.Addr{route.MustParseAddr(ipStr + "/32")},
+		}
+		_ = routeManager.Delete(bOpts)
+		if err := routeManager.Add(bOpts); err != nil {
+			slog.Error("failed to add bypass route", "ip", ipStr, "gw", gw, "err", err)
+		} else {
+			opts = append(opts, &bOpts)
+		}
+	}
+	return opts
+}
+
+func cleanupBypassRoutes(routeManager *route.Route, opts []*route.Opts) {
+	for _, bOpts := range opts {
+		if bOpts != nil {
+			_ = routeManager.Delete(*bOpts)
+		}
+	}
+}
+
 func main() {
 	checkFlag := flag.Bool("check", false, "check network privileges and exit (0 = ok, 1 = missing)")
 	cleanFlag := flag.Bool("clean", false, "clean stuck TUN devices and routes and exit")
@@ -107,6 +158,7 @@ func main() {
 	tunDNS := flag.String("tun-dns", "8.8.8.8", "TUN interface DNS")
 	routesStr := flag.String("routes", "0.0.0.0/1,128.0.0.0/1", "comma-separated CIDR routes to route into TUN")
 	bypassIP := flag.String("bypass-ip", "", "remote server IP to route directly through physical gateway")
+	bypassIPs := flag.String("bypass-ips", "", "comma-separated remote server IPs to route directly through physical gateway")
 	gatewayIP := flag.String("gateway-ip", "", "default gateway IP for bypass route")
 	mode := flag.String("mode", "tunnel", "tunnel mode (tunnel, system, bridge, per_app)")
 	flag.Parse()
@@ -178,7 +230,7 @@ func main() {
 	}()
 
 	if *engine == "awg" {
-		runAWG(ctx, *tunName, *tunAddr, *tunGw, *tunDNS, *routesStr, *bypassIP, *gatewayIP, *awgLink)
+		runAWG(ctx, *tunName, *tunAddr, *tunGw, *tunDNS, *routesStr, *bypassIP, *bypassIPs, *gatewayIP, *awgLink)
 		return
 	}
 
@@ -221,31 +273,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Add bypass route for XRay remote server IP so traffic doesn't loop
-	var bypassOpts *route.Opts
-	if *bypassIP != "" {
-		var gw net.IP
-		if *gatewayIP != "" {
-			gw = net.ParseIP(*gatewayIP)
-		}
-		if gw == nil {
-			if g, err := gateway.DiscoverGateway(); err == nil && g != nil && !g.IsUnspecified() {
-				gw = g
-			}
-		}
-		if gw != nil {
-			bOpts := route.Opts{
-				Gateway: gw,
-				Routes:  []*route.Addr{route.MustParseAddr(*bypassIP + "/32")},
-			}
-			_ = routeManager.Delete(bOpts)
-			if err := routeManager.Add(bOpts); err != nil {
-				slog.Error("failed to add bypass route for xray server", "ip", *bypassIP, "gw", gw, "err", err)
-			} else {
-				bypassOpts = &bOpts
-			}
+	var gw net.IP
+	if *gatewayIP != "" {
+		gw = net.ParseIP(*gatewayIP)
+	}
+	if gw == nil {
+		if g, err := gateway.DiscoverGateway(); err == nil && g != nil && !g.IsUnspecified() {
+			gw = g
 		}
 	}
+
+	allBypassIPs := parseBypassIPs(*bypassIP, *bypassIPs)
+	bypassOptsList := setupBypassRoutes(routeManager, allBypassIPs, gw)
 
 	// Parse routes to TUN
 	var routesToTUN []*route.Addr
@@ -266,9 +305,7 @@ func main() {
 	}
 
 	if err := routeManager.Add(tunOpts); err != nil {
-		if bypassOpts != nil {
-			_ = routeManager.Delete(*bypassOpts)
-		}
+		cleanupBypassRoutes(routeManager, bypassOptsList)
 		emit(Event{Event: "error", Message: fmt.Sprintf("add TUN routes: %v", err)})
 		os.Exit(1)
 	}
@@ -278,9 +315,7 @@ func main() {
 	cleanup := func() {
 		cleanOnce.Do(func() {
 			_ = routeManager.Delete(tunOpts)
-			if bypassOpts != nil {
-				_ = routeManager.Delete(*bypassOpts)
-			}
+			cleanupBypassRoutes(routeManager, bypassOptsList)
 			_ = ifc.Close()
 		})
 	}
@@ -343,7 +378,7 @@ func main() {
 	})
 }
 
-func runAWG(ctx context.Context, tunName string, tunAddr string, tunGw string, tunDNS string, routesStr string, bypassIP string, gatewayIP string, awgLink string) {
+func runAWG(ctx context.Context, tunName string, tunAddr string, tunGw string, tunDNS string, routesStr string, bypassIP string, bypassIPs string, gatewayIP string, awgLink string) {
 	awgCfg, _, err := wireguard.ParseLink(awgLink)
 	if err != nil {
 		emit(Event{Event: "error", Message: fmt.Sprintf("parse awg link: %v", err)})
@@ -410,41 +445,40 @@ func runAWG(ctx context.Context, tunName string, tunAddr string, tunGw string, t
 		os.Exit(1)
 	}
 
-	var bypassOpts *route.Opts
-	endpointIP := bypassIP
-	if endpointIP == "" {
-		endpointHost := awgCfg.Endpoint
-		if h, _, err := net.SplitHostPort(awgCfg.Endpoint); err == nil {
-			endpointHost = h
+	endpointIP := ""
+	endpointHost := awgCfg.Endpoint
+	if h, _, err := net.SplitHostPort(awgCfg.Endpoint); err == nil {
+		endpointHost = h
+	}
+	if ip, err := net.ResolveIPAddr("ip", endpointHost); err == nil {
+		endpointIP = ip.IP.String()
+	}
+
+	allBypassIPs := parseBypassIPs(bypassIP, bypassIPs)
+	if endpointIP != "" {
+		var found bool
+		for _, ip := range allBypassIPs {
+			if ip == endpointIP {
+				found = true
+				break
+			}
 		}
-		if ip, err := net.ResolveIPAddr("ip", endpointHost); err == nil {
-			endpointIP = ip.IP.String()
+		if !found {
+			allBypassIPs = append(allBypassIPs, endpointIP)
 		}
 	}
 
-	if endpointIP != "" {
-		var gw net.IP
-		if gatewayIP != "" {
-			gw = net.ParseIP(gatewayIP)
-		}
-		if gw == nil {
-			if g, err := gateway.DiscoverGateway(); err == nil && g != nil && !g.IsUnspecified() {
-				gw = g
-			}
-		}
-		if gw != nil {
-			bOpts := route.Opts{
-				Gateway: gw,
-				Routes:  []*route.Addr{route.MustParseAddr(endpointIP + "/32")},
-			}
-			_ = routeManager.Delete(bOpts)
-			if err := routeManager.Add(bOpts); err != nil {
-				slog.Error("failed to add bypass route for awg endpoint", "ip", endpointIP, "gw", gw, "err", err)
-			} else {
-				bypassOpts = &bOpts
-			}
+	var gw net.IP
+	if gatewayIP != "" {
+		gw = net.ParseIP(gatewayIP)
+	}
+	if gw == nil {
+		if g, err := gateway.DiscoverGateway(); err == nil && g != nil && !g.IsUnspecified() {
+			gw = g
 		}
 	}
+
+	bypassOptsList := setupBypassRoutes(routeManager, allBypassIPs, gw)
 
 	var routesToTUN []*route.Addr
 	for _, r := range strings.Split(routesStr, ",") {
@@ -464,9 +498,7 @@ func runAWG(ctx context.Context, tunName string, tunAddr string, tunGw string, t
 	}
 
 	if err := routeManager.Add(tunOpts); err != nil {
-		if bypassOpts != nil {
-			_ = routeManager.Delete(*bypassOpts)
-		}
+		cleanupBypassRoutes(routeManager, bypassOptsList)
 		_ = tunDev.Close()
 		emit(Event{Event: "error", Message: fmt.Sprintf("add TUN routes: %v", err)})
 		os.Exit(1)
@@ -483,9 +515,7 @@ func runAWG(ctx context.Context, tunName string, tunAddr string, tunGw string, t
 
 	ipcStr, err := awg.BuildIPCConfig(awgCfg)
 	if err != nil {
-		if bypassOpts != nil {
-			_ = routeManager.Delete(*bypassOpts)
-		}
+		cleanupBypassRoutes(routeManager, bypassOptsList)
 		_ = routeManager.Delete(tunOpts)
 		dev.Close()
 		emit(Event{Event: "error", Message: fmt.Sprintf("build awg ipc config: %v", err)})
@@ -493,9 +523,7 @@ func runAWG(ctx context.Context, tunName string, tunAddr string, tunGw string, t
 	}
 
 	if err := dev.IpcSet(ipcStr); err != nil {
-		if bypassOpts != nil {
-			_ = routeManager.Delete(*bypassOpts)
-		}
+		cleanupBypassRoutes(routeManager, bypassOptsList)
 		_ = routeManager.Delete(tunOpts)
 		dev.Close()
 		emit(Event{Event: "error", Message: fmt.Sprintf("set awg ipc: %v", err)})
@@ -503,9 +531,7 @@ func runAWG(ctx context.Context, tunName string, tunAddr string, tunGw string, t
 	}
 
 	if err := dev.Up(); err != nil {
-		if bypassOpts != nil {
-			_ = routeManager.Delete(*bypassOpts)
-		}
+		cleanupBypassRoutes(routeManager, bypassOptsList)
 		_ = routeManager.Delete(tunOpts)
 		dev.Close()
 		emit(Event{Event: "error", Message: fmt.Sprintf("awg dev up: %v", err)})
@@ -516,9 +542,7 @@ func runAWG(ctx context.Context, tunName string, tunAddr string, tunGw string, t
 	cleanup := func() {
 		cleanOnce.Do(func() {
 			_ = routeManager.Delete(tunOpts)
-			if bypassOpts != nil {
-				_ = routeManager.Delete(*bypassOpts)
-			}
+			cleanupBypassRoutes(routeManager, bypassOptsList)
 			dev.Close()
 		})
 	}
