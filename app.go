@@ -145,6 +145,7 @@ func NewApp() *App {
 	items.SetBridgeDialerFactory(func(defaultSocksAddr string) tproxy.Dialer {
 		return bridge.NewBridgeDialer(defaultSocksAddr, saveFile.GetBridgeRules, slog.Default(), saveFile.GetBridgeGroups)
 	})
+	items.SetConfigPath(saveFile.FilePath())
 
 	items.OnChange(func() {
 		saveFile.Update(items)
@@ -450,6 +451,7 @@ func (a *App) connectInternal(id string) error {
 			return bridge.NewBridgeDialer(defaultSocksAddr, a.saveFile.GetBridgeRules, slog.Default(), a.saveFile.GetBridgeGroups)
 		})
 	}
+	target.SetConfigPath(a.saveFile.FilePath())
 	devIP, dns := a.saveFile.GetTunnelSettings()
 	target.SetTunnelSettings(devIP, dns)
 	target.SetBypassIPs(a.collectAllProfileIPs())
@@ -636,7 +638,7 @@ func (a *App) ResetTraffic(id string) error {
 	return nil
 }
 
-var appVersion = "1.4.0"
+var appVersion = "1.4.1"
 
 func (a *App) GetAppInfo() AppInfoDTO {
 	return AppInfoDTO{
@@ -1320,6 +1322,7 @@ func (a *App) SetTunnelMode(mode string) error {
 					return bridge.NewBridgeDialer(defaultSocksAddr, a.saveFile.GetBridgeRules, slog.Default(), a.saveFile.GetBridgeGroups)
 				})
 			}
+			item.SetConfigPath(a.saveFile.FilePath())
 			if err := item.ConnectWithMode(tMode); err != nil {
 				slog.Error("failed to reconnect with new mode", "error", err)
 				item.SetActive(false)

@@ -178,6 +178,12 @@ func (s *SaveFile) GetTunnelSettings() (string, string) {
 	return devIP, dns
 }
 
+func (s *SaveFile) FilePath() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.filePath
+}
+
 func (s *SaveFile) SetTunnelSettings(deviceIP, dns string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

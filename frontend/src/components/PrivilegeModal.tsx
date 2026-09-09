@@ -15,7 +15,6 @@ export const PrivilegeModal: React.FC<PrivilegeModalProps> = ({
   isOpen,
   command,
   os,
-  errorMessage,
   onClose,
   onCheckAgain,
   onGrantWithPkexec,
@@ -74,15 +73,15 @@ export const PrivilegeModal: React.FC<PrivilegeModalProps> = ({
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-              <ShieldAlert className="w-6 h-6" />
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+              <ShieldAlert className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-100">Network Privileges Required</h3>
+              <h3 className="text-sm font-bold text-slate-100">Network Privileges Required</h3>
               <p className="text-xs text-slate-400 mt-0.5">
                 {os === 'darwin'
-                  ? 'Administrator privileges required for TUN mode on macOS'
-                  : 'Linux capabilities missing on Kite tunnel helper'}
+                  ? 'Kite requires administrator privileges to run the tunnel helper.'
+                  : 'Kite requires network capabilities to run the tunnel helper.'}
               </p>
             </div>
           </div>
@@ -93,23 +92,6 @@ export const PrivilegeModal: React.FC<PrivilegeModalProps> = ({
             <X className="w-4 h-4" />
           </button>
         </div>
-
-        {/* Explanation */}
-        {os === 'darwin' ? (
-          <p className="text-xs text-slate-300 leading-relaxed">
-            Kite requires administrator privileges for its network tunnel helper to create virtual TUN interfaces (<code className="text-indigo-300">utun</code>) and configure routing tables for system-wide VPN tunnel mode.
-          </p>
-        ) : (
-          <p className="text-xs text-slate-300 leading-relaxed">
-            Kite requires network capabilities (<code className="bg-slate-800 px-1 py-0.5 rounded text-amber-300 font-mono text-[11px]">CAP_NET_ADMIN</code>, <code className="bg-slate-800 px-1 py-0.5 rounded text-amber-300 font-mono text-[11px]">CAP_NET_RAW</code>, <code className="bg-slate-800 px-1 py-0.5 rounded text-amber-300 font-mono text-[11px]">CAP_NET_BIND_SERVICE</code>) on its tunnel helper to create virtual TUN adapters (<code className="text-indigo-300">kite0</code>) and configure routing tables without running the GUI app as root.
-          </p>
-        )}
-
-        {errorMessage && (
-          <div className="text-[11px] text-amber-400/90 bg-amber-950/30 border border-amber-500/20 px-3 py-2 rounded-xl">
-            {errorMessage}
-          </div>
-        )}
 
         {/* Command Box */}
         <div className="flex flex-col gap-1.5">
@@ -140,9 +122,6 @@ export const PrivilegeModal: React.FC<PrivilegeModalProps> = ({
           <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl font-mono text-xs text-amber-200/90 break-all select-all leading-relaxed">
             {command || (os === 'darwin' ? 'sudo chown root:wheel /Applications/Kite.app/Contents/MacOS/kite-tunnel && sudo chmod 4755 /Applications/Kite.app/Contents/MacOS/kite-tunnel' : 'sudo setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /opt/kite/kite-tunnel')}
           </div>
-          <p className="text-[11px] text-slate-400 italic">
-            Note: After running the command, click &apos;Check Again&apos;.
-          </p>
         </div>
 
         {grantError && (

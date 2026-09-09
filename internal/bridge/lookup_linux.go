@@ -117,11 +117,11 @@ func findProcessByInode(inode uint64) (string, uint32) {
 			}
 			if link == targetSocket {
 				// Found process
-				commBytes, _ := os.ReadFile(filepath.Join("/proc", name, "comm"))
-				comm := strings.TrimSpace(string(commBytes))
-				if comm == "" {
-					exeLink, _ := os.Readlink(filepath.Join("/proc", name, "exe"))
-					comm = filepath.Base(exeLink)
+				exeLink, _ := os.Readlink(filepath.Join("/proc", name, "exe"))
+				comm := filepath.Base(exeLink)
+				if comm == "" || comm == "." {
+					commBytes, _ := os.ReadFile(filepath.Join("/proc", name, "comm"))
+					comm = strings.TrimSpace(string(commBytes))
 				}
 
 				linuxProcCacheMu.Lock()

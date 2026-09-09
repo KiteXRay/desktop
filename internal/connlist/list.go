@@ -16,6 +16,7 @@ type Collection struct {
 
 	tunnelDeviceIP      string
 	tunnelDNS           string
+	configPath          string
 	bridgeDialerFactory func(defaultSocksAddr string) tproxy.Dialer
 
 	onAdd    func(*Item)
@@ -115,6 +116,9 @@ func (l *Collection) AddItemWithSubscription(id, label, link, subscriptionID str
 	item.SetPersistedTraffic(read, written)
 	if l.bridgeDialerFactory != nil {
 		item.SetBridgeDialerFactory(l.bridgeDialerFactory)
+	}
+	if l.configPath != "" {
+		item.SetConfigPath(l.configPath)
 	}
 	if l.tunnelDeviceIP != "" || l.tunnelDNS != "" {
 		item.SetTunnelSettings(l.tunnelDeviceIP, l.tunnelDNS)
@@ -246,6 +250,20 @@ func (l *Collection) SetBridgeDialerFactory(fn func(defaultSocksAddr string) tpr
 	for _, item := range items {
 		if item != nil {
 			item.SetBridgeDialerFactory(fn)
+		}
+	}
+}
+
+func (l *Collection) SetConfigPath(path string) {
+	l.mu.Lock()
+	l.configPath = path
+	items := make([]*Item, len(l.items))
+	copy(items, l.items)
+	l.mu.Unlock()
+
+	for _, item := range items {
+		if item != nil {
+			item.SetConfigPath(path)
 		}
 	}
 }

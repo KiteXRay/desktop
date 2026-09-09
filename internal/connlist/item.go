@@ -32,6 +32,7 @@ type Client interface {
 	SetTunnelSettings(deviceIP, dns string)
 	SetBypassIPs(ips []string)
 	SetBridgeDialerFactory(fn func(defaultSocksAddr string) tproxy.Dialer)
+	SetConfigPath(path string)
 }
 
 // Item is a combine that is passed (via interface segregation) throughout the system to apply
@@ -135,6 +136,9 @@ func (c *Item) init() error {
 	if c.parent != nil && c.parent.bridgeDialerFactory != nil {
 		c.client.SetBridgeDialerFactory(c.parent.bridgeDialerFactory)
 	}
+	if c.parent != nil && c.parent.configPath != "" {
+		c.client.SetConfigPath(c.parent.configPath)
+	}
 
 	c.recorder = netchart.NewRecorder(c.client)
 	c.recorder.Start()
@@ -199,6 +203,14 @@ func (c *Item) SetBridgeDialerFactory(fn func(defaultSocksAddr string) tproxy.Di
 	defer c.mu.Unlock()
 	if c.client != nil {
 		c.client.SetBridgeDialerFactory(fn)
+	}
+}
+
+func (c *Item) SetConfigPath(path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.client != nil {
+		c.client.SetConfigPath(path)
 	}
 }
 

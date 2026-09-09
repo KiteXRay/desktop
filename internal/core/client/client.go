@@ -100,6 +100,7 @@ type Config struct {
 	TunnelBinaryPath    string
 	BypassIPs           []string
 	BridgeDialerFactory func(defaultSocksAddr string) tproxy.Dialer
+	ConfigPath          string
 }
 
 type Client struct {
@@ -217,6 +218,10 @@ func (c *Client) SetBridgeDialerFactory(fn func(defaultSocksAddr string) tproxy.
 	c.bridgeDialerFactory = fn
 }
 
+func (c *Client) SetConfigPath(path string) {
+	c.cfg.ConfigPath = path
+}
+
 func (c *Client) SetTunnelSettings(deviceIP, dns string) {
 	if deviceIP != "" {
 		c.cfg.TunnelDeviceIP = deviceIP
@@ -288,8 +293,8 @@ func (c *Client) ConnectWithMode(link string, mode TunnelMode) error {
 		if helperBin == "" {
 			helperBin = findTunnelBinary()
 		}
-		// If running in Proxy-only mode or helper binary is unavailable, use in-process netstack engine
-		if mode == TunnelModeProxy || helperBin == "" {
+		// If running in Proxy-only mode, Bridge mode, or helper binary is unavailable, use in-process netstack engine
+		if mode == TunnelModeProxy || mode == TunnelModeBridge || helperBin == "" {
 			c.awgEngine = awg.NewEngine()
 			if err := c.awgEngine.Start(awgCfg, c.cfg.SocksPort); err != nil {
 				return fmt.Errorf("start awg engine: %w", err)
@@ -415,8 +420,11 @@ func (c *Client) setupSystemRoutingWithHelper(ctx context.Context, tunnelBin str
 		"--socks5", c.cfg.InboundProxy.String(),
 		"--mode", string(c.cfg.Mode),
 	}
-	if c.isAWG && c.awgLink != "" {
+	if c.isAWG && c.awgLink != "" && c.cfg.Mode != TunnelModeBridge {
 		args = append(args, "--engine", "awg", "--awg-link", c.awgLink)
+	}
+	if c.cfg.ConfigPath != "" {
+		args = append(args, "--config", c.cfg.ConfigPath)
 	}
 	if c.cfg.TunnelDNS != "" {
 		args = append(args, "--tun-dns", c.cfg.TunnelDNS)

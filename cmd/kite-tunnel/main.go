@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/KiteXRay/desktop/internal/bridge"
 	"github.com/KiteXRay/desktop/internal/osspecific/clean"
 	"github.com/KiteXRay/desktop/internal/osspecific/root"
 	"github.com/amnezia-vpn/amneziawg-go/conn"
@@ -161,6 +162,7 @@ func main() {
 	bypassIPs := flag.String("bypass-ips", "", "comma-separated remote server IPs to route directly through physical gateway")
 	gatewayIP := flag.String("gateway-ip", "", "default gateway IP for bypass route")
 	mode := flag.String("mode", "tunnel", "tunnel mode (tunnel, system, bridge, per_app)")
+	configPath := flag.String("config", "", "path to connections.json config file for bridge mode")
 	flag.Parse()
 
 	// Fix user permissions mode (runs as setuid root to repair root-owned config files)
@@ -230,6 +232,10 @@ func main() {
 	}()
 
 	if *engine == "awg" {
+		if *mode == "bridge" {
+			emit(Event{Event: "error", Message: "bridge mode is not supported with native awg engine"})
+			os.Exit(1)
+		}
 		runAWG(ctx, *tunName, *tunAddr, *tunGw, *tunDNS, *routesStr, *bypassIP, *bypassIPs, *gatewayIP, *awgLink)
 		return
 	}
@@ -365,8 +371,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	_ = mode // reserved for future per-app or bridge customizations
-	errPipe := pipe.Copy(ctx, metered, *socks5)
+	var errPipe error
+	if *mode == "bridge" {
+		cleanupBypass, err := bridge.SetupBridgeBypass(gw)
+		if err != nil {
+			slog.Warn("failed to setup bridge bypass", "err", err)
+		} else {
+			defer cleanupBypass()
+		}
+
+		watcher := bridge.NewConfigWatcher(*configPath)
+		bd := bridge.NewBridgeDialer(*socks5, watcher.GetRules, slog.Default(), watcher.GetGroups)
+		errPipe = pipe.CopyWithDialer(ctx, metered, bd)
+	} else {
+		errPipe = pipe.Copy(ctx, metered, *socks5)
+	}
 	if errPipe != nil && errPipe != context.Canceled {
 		slog.Error("pipe2socks stopped with error", "err", errPipe)
 	}
