@@ -1,7 +1,7 @@
-## Kite v1.4.1
+## Kite v1.4.2
 
 ### 🛠 Fixes & Improvements
-- **Bridge Mode in Standalone Helper**: Resolved an issue where Bridge mode behaved identically to standard Tunnel mode when using `kite-tunnel`. Added `BridgeDialer` integration with physical interface bypass binding and dynamic configuration monitoring.
-- **WireGuard / AmneziaWG Bridge Compatibility**: Routed WireGuard and AmneziaWG profiles through local netstack SOCKS5 proxy in Bridge mode to enable granular per-process routing rules.
-- **Linux Socket Process Resolution**: Improved process resolution for incoming connections by resolving `/proc/[pid]/exe` to prevent 15-character truncation on Linux.
-- **Streamlined Privileges Dialog**: Simplified the network privileges modal with concise messaging and removed extraneous error boxes.
+- **macOS Bridge Mode Direct Bypass**: Fixed an issue on macOS where non-bridged applications were blocked from reaching the internet in Bridge mode. Added Darwin interface-scoped routes (`-ifscope`) and physical interface socket binding (`IP_BOUND_IF`) ensuring non-bridged traffic routes directly through the physical gateway without colliding with TUN routes.
+- **macOS Connection & Disconnection Latency**: Optimized proxy state management and concurrent `networksetup` execution on macOS, eliminating the 20–30s delay on connect/disconnect and restoring immediate network responsiveness.
+- **macOS Privilege Elevation**: Added `NSAppleEventsUsageDescription` and resolved helper binary symlinks to resolve "Operation not permitted" authorization errors on modern macOS, with automatic terminal fallback for administrative elevation.
+- **Tunnel Startup Robustness**: Fixed route parsing, nil gateway pointer safety, and startup race conditions in `kite-tunnel` to prevent premature exits during initialization.
