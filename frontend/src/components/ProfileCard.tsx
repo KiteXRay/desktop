@@ -106,8 +106,39 @@ export const ProfileCard: React.FC<ProfileCardProps> = React.memo(({
             )}
           </div>
 
-          {/* Right: Ping, Traffic, Actions, Connect */}
+          {/* Right: Traffic, Actions, Ping, Connect */}
           <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+            <span className="text-[10px] font-mono text-slate-400 hidden xl:inline-block" title="Total traffic">
+              {formatBytes(totalBytes ?? (bytesRead + bytesWritten))}
+            </span>
+
+            {/* Quick Actions visible on row hover (placed to the left of ping so ping position is stable) */}
+            <div className="hidden group-hover:flex items-center gap-0.5">
+              <button
+                onClick={onResetTraffic}
+                className="p-1 text-slate-400 hover:text-amber-400 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Reset traffic statistics"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+              <button
+                onClick={onEdit}
+                disabled={active}
+                className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                title={active ? 'Disconnect before editing' : 'Edit profile'}
+              >
+                <Edit2 className="w-3 h-3" />
+              </button>
+              <button
+                onClick={onDelete}
+                disabled={active}
+                className="p-1 text-slate-400 hover:text-rose-400 disabled:opacity-30 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                title={active ? 'Disconnect before deleting' : 'Delete profile'}
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+
             <button
               onClick={onPing}
               disabled={isPinging}
@@ -137,37 +168,6 @@ export const ProfileCard: React.FC<ProfileCardProps> = React.memo(({
                   : '- ms'}
               </span>
             </button>
-
-            <span className="text-[10px] font-mono text-slate-400 hidden xl:inline-block" title="Total traffic">
-              {formatBytes(totalBytes ?? (bytesRead + bytesWritten))}
-            </span>
-
-            {/* Quick Actions visible on row hover */}
-            <div className="hidden group-hover:flex items-center gap-0.5">
-              <button
-                onClick={onResetTraffic}
-                className="p-1 text-slate-400 hover:text-amber-400 rounded hover:bg-slate-800 transition-colors cursor-pointer"
-                title="Reset traffic statistics"
-              >
-                <RotateCcw className="w-3 h-3" />
-              </button>
-              <button
-                onClick={onEdit}
-                disabled={active}
-                className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 rounded hover:bg-slate-800 transition-colors cursor-pointer"
-                title={active ? 'Disconnect before editing' : 'Edit profile'}
-              >
-                <Edit2 className="w-3 h-3" />
-              </button>
-              <button
-                onClick={onDelete}
-                disabled={active}
-                className="p-1 text-slate-400 hover:text-rose-400 disabled:opacity-30 rounded hover:bg-slate-800 transition-colors cursor-pointer"
-                title={active ? 'Disconnect before deleting' : 'Delete profile'}
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-            </div>
 
             <button
               onClick={onConnect}
