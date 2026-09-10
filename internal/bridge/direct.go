@@ -14,6 +14,7 @@ import (
 var (
 	boundInterfaceIndex atomic.Int32
 	boundInterfaceName  atomic.Pointer[string]
+	boundInterfaceIP    atomic.Pointer[net.IP]
 )
 
 type bridgeDirectProxy struct {
@@ -37,12 +38,25 @@ func (d *bridgeDirectProxy) DialContext(ctx context.Context, metadata *M.Metadat
 		return d.Proxy.DialContext(ctx, metadata)
 	}
 
+	var localIP net.IP
+	if p := boundInterfaceIP.Load(); p != nil && *p != nil {
+		localIP = *p
+	}
+	if len(localIP) == 0 && ifaceName != "" {
+		if ifc, err := net.InterfaceByName(ifaceName); err == nil {
+			localIP = GetInterfaceIPv4(ifc)
+		}
+	}
+
 	dst := metadata.DestinationAddress()
 	dialer := &net.Dialer{
 		Timeout: 10 * time.Second,
 		Control: func(network, address string, c syscall.RawConn) error {
 			return bindRawConnToInterface(c, network, address, ifaceIdx, ifaceName)
 		},
+	}
+	if len(localIP) > 0 && (!metadata.DstIP.IsValid() || metadata.DstIP.Is4()) {
+		dialer.LocalAddr = &net.TCPAddr{IP: localIP}
 	}
 
 	network := "tcp"
@@ -73,13 +87,28 @@ func (d *bridgeDirectProxy) DialUDP(metadata *M.Metadata) (net.PacketConn, error
 		return d.Proxy.DialUDP(metadata)
 	}
 
+	var localIP net.IP
+	if p := boundInterfaceIP.Load(); p != nil && *p != nil {
+		localIP = *p
+	}
+	if len(localIP) == 0 && ifaceName != "" {
+		if ifc, err := net.InterfaceByName(ifaceName); err == nil {
+			localIP = GetInterfaceIPv4(ifc)
+		}
+	}
+
 	lc := &net.ListenConfig{
 		Control: func(network, address string, c syscall.RawConn) error {
 			return bindRawConnToInterface(c, network, address, ifaceIdx, ifaceName)
 		},
 	}
 
-	pc, err := lc.ListenPacket(context.Background(), "udp4", ":0")
+	listenAddr := ":0"
+	if len(localIP) > 0 && (!metadata.DstIP.IsValid() || metadata.DstIP.Is4()) {
+		listenAddr = net.JoinHostPort(localIP.String(), "0")
+	}
+
+	pc, err := lc.ListenPacket(context.Background(), "udp4", listenAddr)
 	if err != nil {
 		pc, err = lc.ListenPacket(context.Background(), "udp", ":0")
 		if err != nil {

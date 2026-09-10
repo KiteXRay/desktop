@@ -106,6 +106,25 @@ func GetPhysicalInterface(customGW ...net.IP) (*net.Interface, error) {
 	return nil, errors.New("no physical network interface found")
 }
 
+// GetInterfaceIPv4 returns the first valid non-loopback IPv4 address for the interface.
+func GetInterfaceIPv4(ifc *net.Interface) net.IP {
+	if ifc == nil {
+		return nil
+	}
+	addrs, err := ifc.Addrs()
+	if err != nil {
+		return nil
+	}
+	for _, addr := range addrs {
+		if ipNet, ok := addr.(*net.IPNet); ok {
+			if ip4 := ipNet.IP.To4(); ip4 != nil && !ip4.IsLoopback() && !ip4.IsUnspecified() && !ip4.IsLinkLocalUnicast() {
+				return ip4
+			}
+		}
+	}
+	return nil
+}
+
 // SetupBridgeBypass binds direct traffic to the physical network interface so that non-matching
 // traffic exits directly through the physical gateway without looping back into the TUN device.
 func SetupBridgeBypass(customGW ...net.IP) (func(), error) {
@@ -118,6 +137,11 @@ func SetupBridgeBypass(customGW ...net.IP) (func(), error) {
 	name := iface.Name
 	boundInterfaceName.Store(&name)
 
+	if ip := GetInterfaceIPv4(iface); ip != nil {
+		boundInterfaceIP.Store(&ip)
+		slog.Info("Bridge mode bound interface IP", "ip", ip.String())
+	}
+
 	dialer.DefaultDialer.InterfaceIndex.Store(int32(iface.Index))
 	dialer.DefaultDialer.InterfaceName.Store(iface.Name)
 
@@ -128,7 +152,9 @@ func SetupBridgeBypass(customGW ...net.IP) (func(), error) {
 func CleanupBridgeBypass() {
 	boundInterfaceIndex.Store(0)
 	boundInterfaceName.Store(nil)
+	boundInterfaceIP.Store(nil)
 
 	dialer.DefaultDialer.InterfaceIndex.Store(0)
 	dialer.DefaultDialer.InterfaceName.Store("")
 }
+
