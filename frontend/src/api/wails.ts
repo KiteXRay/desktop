@@ -53,6 +53,7 @@ declare global {
           SetCompactMode(compact: boolean): Promise<void>;
           ToggleWindow(): Promise<void>;
           SaveWindowGeometry(): Promise<void>;
+          NotifyWindowVisibility(visible: boolean): Promise<void>;
         };
       };
     };
@@ -527,6 +528,13 @@ export const api = {
     const app = getApp();
     if (app?.SaveWindowGeometry) {
       return app.SaveWindowGeometry();
+    }
+  },
+
+  async notifyWindowVisibility(visible: boolean): Promise<void> {
+    const app = getApp();
+    if (app?.NotifyWindowVisibility) {
+      return app.NotifyWindowVisibility(visible);
     }
   },
 

@@ -139,13 +139,14 @@ func (m *linuxManager) eventLoop() {
 		if eventType == C.KeyPress {
 			keyEvent := (*C.XKeyEvent)(unsafe.Pointer(&event))
 			kc := C.KeyCode(C.getEventKeycode(keyEvent))
-			cleanState := C.getEventState(keyEvent) &^ (C.LockMask | C.Mod2Mask)
+			cleanState := C.getEventState(keyEvent) & (C.ControlMask | C.Mod1Mask | C.ShiftMask | C.Mod4Mask)
 
 			m.mu.RLock()
 			for shortcut, cb := range m.callbacks {
 				regKc := m.keyCodes[shortcut]
 				regMod := m.modMasks[shortcut]
 				if kc == regKc && cleanState == regMod {
+					slog.Info("Global hotkey triggered", "shortcut", shortcut)
 					if cb != nil {
 						go cb()
 					}

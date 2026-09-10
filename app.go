@@ -2079,20 +2079,26 @@ func (a *App) ToggleWindow() {
 		return
 	}
 	if wruntime.WindowIsMinimised(a.ctx) {
-		wruntime.WindowUnminimise(a.ctx)
-		wruntime.WindowShow(a.ctx)
+		a.ShowWindow()
 		return
 	}
 	a.windowMu.Lock()
-	defer a.windowMu.Unlock()
-	if a.windowVisible {
-		a.SaveWindowGeometry()
-		wruntime.WindowHide(a.ctx)
-		a.windowVisible = false
+	visible := a.windowVisible
+	a.windowMu.Unlock()
+
+	if visible {
+		a.HideWindow()
 	} else {
-		wruntime.WindowShow(a.ctx)
-		wruntime.WindowUnminimise(a.ctx)
-		a.windowVisible = true
+		a.ShowWindow()
+	}
+}
+
+func (a *App) NotifyWindowVisibility(visible bool) {
+	a.windowMu.Lock()
+	a.windowVisible = visible
+	a.windowMu.Unlock()
+	if !visible {
+		a.SaveWindowGeometry()
 	}
 }
 

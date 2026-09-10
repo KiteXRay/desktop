@@ -116,6 +116,15 @@ export function App() {
   }, [loadSubscriptions, connections]);
 
   useEffect(() => {
+    const handleVisibilityChange = () => {
+      const isVisible = document.visibilityState === 'visible';
+      api.notifyWindowVisibility(isVisible);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  useEffect(() => {
     api.getAppInfo().then(setAppInfo).catch(() => {});
 
     api.getCompactMode().then((val) => {
