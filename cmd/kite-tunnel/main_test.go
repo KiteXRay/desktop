@@ -38,10 +38,11 @@ func TestKiteTunnel_EventSerialization(t *testing.T) {
 }
 
 func TestParseBypassIPs(t *testing.T) {
-	res := parseBypassIPs("198.51.100.1", "203.0.113.5, 198.51.100.1, 192.0.2.1, invalid-ip")
+	res := parseBypassIPs("198.51.100.1", "203.0.113.5, 198.51.100.1, 192.0.2.1/32, 2001:db8::1, invalid-ip")
 	require.Equal(t, []string{"198.51.100.1", "203.0.113.5", "192.0.2.1"}, res)
 
 	resEmpty := parseBypassIPs("", "")
 	require.Empty(t, resEmpty)
 }
+
 

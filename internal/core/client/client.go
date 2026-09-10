@@ -463,7 +463,8 @@ func (c *Client) setupSystemRoutingWithHelper(ctx context.Context, tunnelBin str
 		_ = stdin.Close()
 		return fmt.Errorf("open kite-tunnel stdout: %w", err)
 	}
-	cmd.Stderr = os.Stderr
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
 
 	if err := cmd.Start(); err != nil {
 		_ = stdin.Close()
@@ -478,6 +479,7 @@ func (c *Client) setupSystemRoutingWithHelper(ctx context.Context, tunnelBin str
 
 	go func() {
 		var isReady bool
+		var rawLines []string
 		for scanner.Scan() {
 			line := scanner.Bytes()
 			var ev struct {
@@ -488,6 +490,12 @@ func (c *Client) setupSystemRoutingWithHelper(ctx context.Context, tunnelBin str
 				Message   string `json:"message"`
 			}
 			if err := json.Unmarshal(line, &ev); err != nil {
+				if trimmed := strings.TrimSpace(string(line)); trimmed != "" {
+					rawLines = append(rawLines, trimmed)
+					if len(rawLines) > 10 {
+						rawLines = rawLines[1:]
+					}
+				}
 				continue
 			}
 			switch ev.Event {
@@ -510,7 +518,13 @@ func (c *Client) setupSystemRoutingWithHelper(ctx context.Context, tunnelBin str
 
 		cmdErr := cmd.Wait()
 		if !isReady {
-			if cmdErr != nil {
+			detail := strings.TrimSpace(stderrBuf.String())
+			if detail == "" && len(rawLines) > 0 {
+				detail = strings.Join(rawLines, " | ")
+			}
+			if detail != "" {
+				readyChan <- fmt.Errorf("kite-tunnel exited prematurely (%w): %s", cmdErr, detail)
+			} else if cmdErr != nil {
 				readyChan <- fmt.Errorf("kite-tunnel exited prematurely: %w", cmdErr)
 			} else {
 				readyChan <- errors.New("kite-tunnel closed unexpectedly")

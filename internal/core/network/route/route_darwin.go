@@ -97,8 +97,8 @@ func processRouteCall(socket int, addrs []route.Addr, action uint8, flags int) e
 
 func toIfaceAddresses(ifcName string, dest *Addr) ([]route.Addr, error) {
 	switch {
-	case dest == nil:
-		return nil, fmt.Errorf("destination is nil")
+	case dest == nil || dest.IP.To4() == nil:
+		return nil, fmt.Errorf("destination is nil or not IPv4: %v", dest)
 	case ifcName == "":
 		return nil, fmt.Errorf("ifcName is empty")
 	}
@@ -113,7 +113,9 @@ func toIfaceAddresses(ifcName string, dest *Addr) ([]route.Addr, error) {
 		&route.LinkAddr{Index: ifc.Index, Name: ifcName},
 	}
 	if dest.Mask != nil {
-		addresses = append(addresses, inet4Addr(net.IP(dest.Mask)))
+		if maskIP := net.IP(dest.Mask).To4(); maskIP != nil {
+			addresses = append(addresses, inet4Addr(maskIP))
+		}
 	}
 
 	return addresses, nil
@@ -121,10 +123,10 @@ func toIfaceAddresses(ifcName string, dest *Addr) ([]route.Addr, error) {
 
 func toGWAddresses(gw net.IP, dest *Addr) ([]route.Addr, error) {
 	switch {
-	case gw == nil:
-		return nil, fmt.Errorf("gateway is nil")
-	case dest == nil:
-		return nil, fmt.Errorf("destination is nil")
+	case gw == nil || gw.To4() == nil:
+		return nil, fmt.Errorf("gateway is nil or not IPv4: %v", gw)
+	case dest == nil || dest.IP.To4() == nil:
+		return nil, fmt.Errorf("destination is nil or not IPv4: %v", dest)
 	}
 
 	addresses := []route.Addr{
@@ -132,12 +134,19 @@ func toGWAddresses(gw net.IP, dest *Addr) ([]route.Addr, error) {
 		inet4Addr(gw),
 	}
 	if dest.Mask != nil {
-		addresses = append(addresses, inet4Addr(net.IP(dest.Mask)))
+		if maskIP := net.IP(dest.Mask).To4(); maskIP != nil {
+			addresses = append(addresses, inet4Addr(maskIP))
+		}
 	}
 
 	return addresses, nil
 }
 
 func inet4Addr(ip net.IP) *route.Inet4Addr {
-	return &route.Inet4Addr{IP: ([4]byte)(ip.To4())}
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return &route.Inet4Addr{}
+	}
+	return &route.Inet4Addr{IP: [4]byte{ip4[0], ip4[1], ip4[2], ip4[3]}}
 }
+

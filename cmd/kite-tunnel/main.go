@@ -44,6 +44,11 @@ func emit(ev Event) {
 	data, err := json.Marshal(ev)
 	if err == nil {
 		fmt.Fprintf(os.Stdout, "%s\n", string(data))
+		_ = os.Stdout.Sync()
+	}
+	if ev.Event == "error" {
+		fmt.Fprintf(os.Stderr, "kite-tunnel error: %s\n", ev.Message)
+		_ = os.Stderr.Sync()
 	}
 }
 
@@ -100,10 +105,20 @@ func parseBypassIPs(bypassIP string, bypassIPs string) []string {
 	var result []string
 	add := func(s string) {
 		s = strings.TrimSpace(s)
-		if s != "" && !seen[s] {
-			if ip := net.ParseIP(s); ip != nil {
-				seen[s] = true
-				result = append(result, s)
+		if s == "" {
+			return
+		}
+		ipStr := s
+		if idx := strings.Index(s, "/"); idx != -1 {
+			ipStr = s[:idx]
+		}
+		if ip := net.ParseIP(ipStr); ip != nil {
+			if ip4 := ip.To4(); ip4 != nil {
+				canonical := ip4.String()
+				if !seen[canonical] {
+					seen[canonical] = true
+					result = append(result, canonical)
+				}
 			}
 		}
 	}
@@ -120,19 +135,24 @@ func parseBypassIPs(bypassIP string, bypassIPs string) []string {
 
 func setupBypassRoutes(routeManager *route.Route, ips []string, gw net.IP) []*route.Opts {
 	var opts []*route.Opts
-	if gw == nil || len(ips) == 0 {
+	if gw == nil || gw.To4() == nil || len(ips) == 0 {
 		return opts
 	}
 	for _, ipStr := range ips {
-		bOpts := route.Opts{
-			Gateway: gw,
-			Routes:  []*route.Addr{route.MustParseAddr(ipStr + "/32")},
+		addr, err := route.ParseAddr(ipStr)
+		if err != nil {
+			slog.Warn("skipping invalid bypass ip", "ip", ipStr, "err", err)
+			continue
 		}
-		_ = routeManager.Delete(bOpts)
-		if err := routeManager.Add(bOpts); err != nil {
+		bOpts := &route.Opts{
+			Gateway: gw,
+			Routes:  []*route.Addr{addr},
+		}
+		_ = routeManager.Delete(*bOpts)
+		if err := routeManager.Add(*bOpts); err != nil {
 			slog.Error("failed to add bypass route", "ip", ipStr, "gw", gw, "err", err)
 		} else {
-			opts = append(opts, &bOpts)
+			opts = append(opts, bOpts)
 		}
 	}
 	return opts
@@ -299,7 +319,11 @@ func main() {
 		if r == "" {
 			continue
 		}
-		addr := route.MustParseAddr(r)
+		addr, err := route.ParseAddr(r)
+		if err != nil {
+			slog.Warn("skipping invalid tun route", "route", r, "err", err)
+			continue
+		}
 		if addr != nil {
 			routesToTUN = append(routesToTUN, addr)
 		}
@@ -469,8 +493,8 @@ func runAWG(ctx context.Context, tunName string, tunAddr string, tunGw string, t
 	if h, _, err := net.SplitHostPort(awgCfg.Endpoint); err == nil {
 		endpointHost = h
 	}
-	if ip, err := net.ResolveIPAddr("ip", endpointHost); err == nil {
-		endpointIP = ip.IP.String()
+	if ip, err := net.ResolveIPAddr("ip", endpointHost); err == nil && ip.IP.To4() != nil {
+		endpointIP = ip.IP.To4().String()
 	}
 
 	allBypassIPs := parseBypassIPs(bypassIP, bypassIPs)
@@ -505,7 +529,11 @@ func runAWG(ctx context.Context, tunName string, tunAddr string, tunGw string, t
 		if r == "" {
 			continue
 		}
-		addr := route.MustParseAddr(r)
+		addr, err := route.ParseAddr(r)
+		if err != nil {
+			slog.Warn("skipping invalid awg tun route", "route", r, "err", err)
+			continue
+		}
 		if addr != nil {
 			routesToTUN = append(routesToTUN, addr)
 		}
