@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/jackpal/gateway"
@@ -145,16 +147,99 @@ func SetupBridgeBypass(customGW ...net.IP) (func(), error) {
 	dialer.DefaultDialer.InterfaceIndex.Store(int32(iface.Index))
 	dialer.DefaultDialer.InterfaceName.Store(iface.Name)
 
+	var gw net.IP
+	if len(customGW) > 0 && customGW[0] != nil && !customGW[0].IsUnspecified() {
+		gw = customGW[0]
+	}
+	if gw == nil {
+		if g, err := gateway.DiscoverGateway(); err == nil && g != nil && !g.IsUnspecified() {
+			gw = g
+		}
+	}
+	if gw != nil {
+		boundInterfaceGW.Store(&gw)
+		addDarwinScopedRoutes(iface.Name, gw)
+	}
+
 	return CleanupBridgeBypass, nil
 }
 
 // CleanupBridgeBypass resets the dialer interface binding.
 func CleanupBridgeBypass() {
+	if pName := boundInterfaceName.Load(); pName != nil {
+		var gw net.IP
+		if pGW := boundInterfaceGW.Load(); pGW != nil && *pGW != nil {
+			gw = *pGW
+		}
+		deleteDarwinScopedRoutes(*pName, gw)
+	}
+
 	boundInterfaceIndex.Store(0)
 	boundInterfaceName.Store(nil)
 	boundInterfaceIP.Store(nil)
+	boundInterfaceGW.Store(nil)
 
 	dialer.DefaultDialer.InterfaceIndex.Store(0)
 	dialer.DefaultDialer.InterfaceName.Store("")
+}
+
+func addDarwinScopedRoutes(ifaceName string, gw net.IP) {
+	if runtime.GOOS != "darwin" || ifaceName == "" || gw == nil {
+		return
+	}
+	gwStr := gw.String()
+	slog.Info("Adding macOS scoped routes for bridge direct traffic", "iface", ifaceName, "gw", gwStr)
+	// Add scoped routes on physical interface
+	// so sockets with IP_BOUND_IF route directly through physical gateway without hitting global TUN routes.
+	routes := []struct {
+		dest string
+		mask string
+	}{
+		{"0.0.0.0", "128.0.0.0"},
+		{"128.0.0.0", "128.0.0.0"},
+	}
+	for _, r := range routes {
+		_ = exec.Command("/sbin/route", "-q", "delete", "-net", "-ifscope", ifaceName, r.dest, gwStr, r.mask).Run()
+		_ = exec.Command("/sbin/route", "-q", "delete", "-net", "-ifscope", ifaceName, r.dest, r.mask).Run()
+		_ = exec.Command("/sbin/route", "-q", "delete", "-net", "-ifscope", ifaceName, r.dest+"/1").Run()
+
+		out, err := exec.Command("/sbin/route", "-q", "add", "-net", "-ifscope", ifaceName, r.dest, gwStr, r.mask).CombinedOutput()
+		if err != nil {
+			slog.Warn("add darwin scoped route failed, trying cidr syntax", "dest", r.dest, "err", err, "out", strings.TrimSpace(string(out)))
+			cidr := r.dest + "/1"
+			out2, err2 := exec.Command("/sbin/route", "-q", "add", "-net", "-ifscope", ifaceName, cidr, gwStr).CombinedOutput()
+			if err2 != nil {
+				slog.Warn("add darwin scoped route with cidr failed too", "cidr", cidr, "err", err2, "out", strings.TrimSpace(string(out2)))
+			}
+		}
+	}
+	_ = exec.Command("/sbin/route", "-q", "delete", "-ifscope", ifaceName, "default", gwStr).Run()
+	_ = exec.Command("/sbin/route", "-q", "delete", "-ifscope", ifaceName, "default").Run()
+	out, err := exec.Command("/sbin/route", "-q", "add", "-ifscope", ifaceName, "default", gwStr).CombinedOutput()
+	if err != nil {
+		slog.Warn("add darwin scoped default route failed", "iface", ifaceName, "err", err, "out", strings.TrimSpace(string(out)))
+	}
+}
+
+func deleteDarwinScopedRoutes(ifaceName string, gw net.IP) {
+	if runtime.GOOS != "darwin" || ifaceName == "" {
+		return
+	}
+	gwStr := ""
+	if gw != nil {
+		gwStr = gw.String()
+	}
+	slog.Info("Cleaning up macOS scoped routes for bridge direct traffic", "iface", ifaceName)
+	for _, dest := range []string{"0.0.0.0", "128.0.0.0"} {
+		if gwStr != "" {
+			_ = exec.Command("/sbin/route", "-q", "delete", "-net", "-ifscope", ifaceName, dest, gwStr, "128.0.0.0").Run()
+		}
+		_ = exec.Command("/sbin/route", "-q", "delete", "-net", "-ifscope", ifaceName, dest, "128.0.0.0").Run()
+		_ = exec.Command("/sbin/route", "-q", "delete", "-net", "-ifscope", ifaceName, dest+"/1").Run()
+	}
+	if gwStr != "" {
+		_ = exec.Command("/sbin/route", "-q", "delete", "-ifscope", ifaceName, "default", gwStr).Run()
+	}
+	_ = exec.Command("/sbin/route", "-q", "delete", "-ifscope", ifaceName, "default").Run()
 }
 

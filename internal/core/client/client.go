@@ -631,9 +631,54 @@ func (c *Client) setupBridgeBypass() {
 	c.cfg.Logger.Info("Bridge mode binding direct traffic to physical interface", "name", iface.Name, "index", iface.Index)
 	dialer.DefaultDialer.InterfaceIndex.Store(int32(iface.Index))
 	dialer.DefaultDialer.InterfaceName.Store(iface.Name)
+
+	if runtime.GOOS == "darwin" && c.cfg.GatewayIP != nil {
+		gwStr := c.cfg.GatewayIP.String()
+		routes := []struct {
+			dest string
+			mask string
+		}{
+			{"0.0.0.0", "128.0.0.0"},
+			{"128.0.0.0", "128.0.0.0"},
+		}
+		for _, r := range routes {
+			_ = exec.Command("/sbin/route", "-q", "delete", "-net", "-ifscope", iface.Name, r.dest, gwStr, r.mask).Run()
+			_ = exec.Command("/sbin/route", "-q", "delete", "-net", "-ifscope", iface.Name, r.dest, r.mask).Run()
+			_ = exec.Command("/sbin/route", "-q", "delete", "-net", "-ifscope", iface.Name, r.dest+"/1").Run()
+
+			if out, err := exec.Command("/sbin/route", "-q", "add", "-net", "-ifscope", iface.Name, r.dest, gwStr, r.mask).CombinedOutput(); err != nil {
+				cidr := r.dest + "/1"
+				_ = exec.Command("/sbin/route", "-q", "add", "-net", "-ifscope", iface.Name, cidr, gwStr).Run()
+				_ = out
+			}
+		}
+		_ = exec.Command("/sbin/route", "-q", "delete", "-ifscope", iface.Name, "default", gwStr).Run()
+		_ = exec.Command("/sbin/route", "-q", "delete", "-ifscope", iface.Name, "default").Run()
+		_ = exec.Command("/sbin/route", "-q", "add", "-ifscope", iface.Name, "default", gwStr).Run()
+	}
 }
 
 func (c *Client) cleanupBridgeBypass() {
+	if runtime.GOOS == "darwin" {
+		name := dialer.DefaultDialer.InterfaceName.Load()
+		if name != "" {
+			var gwStr string
+			if c.cfg.GatewayIP != nil {
+				gwStr = c.cfg.GatewayIP.String()
+			}
+			for _, dest := range []string{"0.0.0.0", "128.0.0.0"} {
+				if gwStr != "" {
+					_ = exec.Command("/sbin/route", "-q", "delete", "-net", "-ifscope", name, dest, gwStr, "128.0.0.0").Run()
+				}
+				_ = exec.Command("/sbin/route", "-q", "delete", "-net", "-ifscope", name, dest, "128.0.0.0").Run()
+				_ = exec.Command("/sbin/route", "-q", "delete", "-net", "-ifscope", name, dest+"/1").Run()
+			}
+			if gwStr != "" {
+				_ = exec.Command("/sbin/route", "-q", "delete", "-ifscope", name, "default", gwStr).Run()
+			}
+			_ = exec.Command("/sbin/route", "-q", "delete", "-ifscope", name, "default").Run()
+		}
+	}
 	dialer.DefaultDialer.InterfaceIndex.Store(0)
 	dialer.DefaultDialer.InterfaceName.Store("")
 }

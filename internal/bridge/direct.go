@@ -16,6 +16,7 @@ var (
 	boundInterfaceIndex atomic.Int32
 	boundInterfaceName  atomic.Pointer[string]
 	boundInterfaceIP    atomic.Pointer[net.IP]
+	boundInterfaceGW    atomic.Pointer[net.IP]
 )
 
 type bridgeDirectProxy struct {
@@ -69,6 +70,10 @@ func (d *bridgeDirectProxy) DialContext(ctx context.Context, metadata *M.Metadat
 		}
 	}
 	conn, err := dialer.DialContext(ctx, network, dst)
+	if err != nil && dialer.LocalAddr != nil {
+		dialer.LocalAddr = nil
+		conn, err = dialer.DialContext(ctx, network, dst)
+	}
 	if err != nil {
 		slog.Error("Bridge direct TCP dial failed", "network", network, "dst", dst, "iface", ifaceName, "idx", ifaceIdx, "err", err)
 		return nil, err
