@@ -48,7 +48,7 @@ func NewBridgeDialer(defaultSocksAddr string, rulesGetter func() []BridgeRule, l
 	return &BridgeDialer{
 		defaultProxyAddr: defaultSocksAddr,
 		defaultProxy:     defProxy,
-		directProxy:      proxy.NewDirect(),
+		directProxy:      newBridgeDirectProxy(),
 		rulesGetter:      rulesGetter,
 		groupsGetter:     gg,
 		logger:           logger,

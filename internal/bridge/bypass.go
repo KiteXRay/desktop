@@ -10,8 +10,38 @@ import (
 	"github.com/xjasonlyu/tun2socks/v2/dialer"
 )
 
+func isExcludedInterface(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.Contains(lower, "tun") ||
+		strings.Contains(lower, "tap") ||
+		strings.Contains(lower, "wintun") ||
+		strings.Contains(lower, "kite") ||
+		strings.HasPrefix(lower, "awdl") ||
+		strings.HasPrefix(lower, "llw") ||
+		strings.HasPrefix(lower, "bridge") ||
+		strings.HasPrefix(lower, "gif") ||
+		strings.HasPrefix(lower, "stf") ||
+		strings.HasPrefix(lower, "anpi")
+}
+
+func hasValidIPv4(ifc *net.Interface) bool {
+	addrs, err := ifc.Addrs()
+	if err != nil {
+		return false
+	}
+	for _, addr := range addrs {
+		if ipNet, ok := addr.(*net.IPNet); ok {
+			ip4 := ipNet.IP.To4()
+			if ip4 != nil && !ip4.IsLoopback() && !ip4.IsUnspecified() && !ip4.IsLinkLocalUnicast() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // GetPhysicalInterface finds the active physical network interface used for internet access,
-// skipping virtual interfaces (tun, tap, wintun, kite).
+// skipping virtual interfaces (tun, tap, wintun, kite, awdl, bridge).
 func GetPhysicalInterface(customGW ...net.IP) (*net.Interface, error) {
 	var gw net.IP
 	if len(customGW) > 0 && customGW[0] != nil && !customGW[0].IsUnspecified() {
@@ -22,6 +52,9 @@ func GetPhysicalInterface(customGW ...net.IP) (*net.Interface, error) {
 	if err == nil && ifIP != nil && !ifIP.IsUnspecified() {
 		ifaces, _ := net.Interfaces()
 		for _, ifc := range ifaces {
+			if isExcludedInterface(ifc.Name) {
+				continue
+			}
 			addrs, _ := ifc.Addrs()
 			for _, addr := range addrs {
 				if ipNet, ok := addr.(*net.IPNet); ok {
@@ -46,8 +79,7 @@ func GetPhysicalInterface(customGW ...net.IP) (*net.Interface, error) {
 			if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
 				continue
 			}
-			name := strings.ToLower(ifc.Name)
-			if strings.Contains(name, "tun") || strings.Contains(name, "tap") || strings.Contains(name, "wintun") || strings.Contains(name, "kite") {
+			if isExcludedInterface(ifc.Name) {
 				continue
 			}
 			addrs, _ := ifc.Addrs()
@@ -64,8 +96,7 @@ func GetPhysicalInterface(customGW ...net.IP) (*net.Interface, error) {
 	ifaces, _ := net.Interfaces()
 	for _, ifc := range ifaces {
 		if ifc.Flags&net.FlagUp != 0 && ifc.Flags&net.FlagBroadcast != 0 && ifc.Flags&net.FlagLoopback == 0 {
-			name := strings.ToLower(ifc.Name)
-			if strings.Contains(name, "tun") || strings.Contains(name, "tap") || strings.Contains(name, "wintun") || strings.Contains(name, "kite") {
+			if isExcludedInterface(ifc.Name) || !hasValidIPv4(&ifc) {
 				continue
 			}
 			return &ifc, nil
@@ -83,6 +114,10 @@ func SetupBridgeBypass(customGW ...net.IP) (func(), error) {
 		return func() {}, err
 	}
 	slog.Info("Bridge mode binding direct traffic to physical interface", "name", iface.Name, "index", iface.Index)
+	boundInterfaceIndex.Store(int32(iface.Index))
+	name := iface.Name
+	boundInterfaceName.Store(&name)
+
 	dialer.DefaultDialer.InterfaceIndex.Store(int32(iface.Index))
 	dialer.DefaultDialer.InterfaceName.Store(iface.Name)
 
@@ -91,6 +126,9 @@ func SetupBridgeBypass(customGW ...net.IP) (func(), error) {
 
 // CleanupBridgeBypass resets the dialer interface binding.
 func CleanupBridgeBypass() {
+	boundInterfaceIndex.Store(0)
+	boundInterfaceName.Store(nil)
+
 	dialer.DefaultDialer.InterfaceIndex.Store(0)
 	dialer.DefaultDialer.InterfaceName.Store("")
 }

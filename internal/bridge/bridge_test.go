@@ -102,3 +102,49 @@ func TestBridgeDialer_DisabledGroup(t *testing.T) {
 	}
 }
 
+func TestIsExcludedInterface(t *testing.T) {
+	excluded := []string{
+		"utun0", "utun3", "tun0", "tap0", "wintun", "kite0",
+		"awdl0", "llw0", "bridge0", "gif0", "stf0", "anpi0",
+	}
+	for _, name := range excluded {
+		if !isExcludedInterface(name) {
+			t.Errorf("expected %q to be excluded", name)
+		}
+	}
+
+	allowed := []string{
+		"en0", "en1", "eth0", "wlan0", "eno1", "wlp2s0",
+	}
+	for _, name := range allowed {
+		if isExcludedInterface(name) {
+			t.Errorf("expected %q to NOT be excluded", name)
+		}
+	}
+}
+
+func TestBridgeDirectProxy_Creation(t *testing.T) {
+	px := newBridgeDirectProxy()
+	if px == nil {
+		t.Fatalf("expected non-nil direct proxy")
+	}
+	if px.Addr() != "" {
+		t.Errorf("expected empty Addr() for direct, got %q", px.Addr())
+	}
+}
+
+func TestBridgeBypass_StoreAndCleanup(t *testing.T) {
+	boundInterfaceIndex.Store(42)
+	name := "en0"
+	boundInterfaceName.Store(&name)
+
+	CleanupBridgeBypass()
+
+	if boundInterfaceIndex.Load() != 0 {
+		t.Errorf("expected boundInterfaceIndex 0 after cleanup, got %d", boundInterfaceIndex.Load())
+	}
+	if boundInterfaceName.Load() != nil {
+		t.Errorf("expected boundInterfaceName nil after cleanup, got %v", boundInterfaceName.Load())
+	}
+}
+

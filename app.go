@@ -477,7 +477,7 @@ func (a *App) connectInternal(id string) error {
 	if currentMode == "proxy" {
 		_ = proxy.SetSystemProxy(true, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
 		a.systemProxyOn = true
-	} else {
+	} else if a.systemProxyOn {
 		_ = proxy.SetSystemProxy(false, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
 		a.systemProxyOn = false
 	}
@@ -508,19 +508,23 @@ func (a *App) Disconnect() error {
 	a.connectMu.Lock()
 	defer a.connectMu.Unlock()
 
-	_ = proxy.SetSystemProxy(false, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
-	a.systemProxyOn = false
-
 	currentActive := a.ActiveID()
-	if currentActive == "" {
-		return nil
+	if currentActive != "" {
+		if item := a.items.FindByID(currentActive); item != nil {
+			if err := item.Disconnect(); err != nil {
+				slog.Error("error disconnecting", "error", err)
+			}
+			item.SetActive(false)
+		}
 	}
 
-	if item := a.items.FindByID(currentActive); item != nil {
-		if err := item.Disconnect(); err != nil {
-			slog.Error("error disconnecting", "error", err)
-		}
-		item.SetActive(false)
+	if a.systemProxyOn {
+		_ = proxy.SetSystemProxy(false, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
+		a.systemProxyOn = false
+	}
+
+	if currentActive == "" {
+		return nil
 	}
 
 	prevID := currentActive
@@ -1344,7 +1348,7 @@ func (a *App) SetTunnelMode(mode string) error {
 			if mode == "proxy" {
 				_ = proxy.SetSystemProxy(true, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
 				a.systemProxyOn = true
-			} else {
+			} else if a.systemProxyOn {
 				_ = proxy.SetSystemProxy(false, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
 				a.systemProxyOn = false
 			}
@@ -1363,7 +1367,7 @@ func (a *App) SetTunnelMode(mode string) error {
 				a.PingConnection(activeID)
 			}()
 		}
-	} else {
+	} else if a.systemProxyOn {
 		_ = proxy.SetSystemProxy(false, "127.0.0.1", client.DefaultHTTPPort, client.DefaultSocksPort)
 		a.systemProxyOn = false
 	}
