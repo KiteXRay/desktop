@@ -19,7 +19,7 @@ export const ProtocolBadges: React.FC<ProtocolBadgeProps> = ({
     <div className="flex flex-wrap items-center gap-1">
       {protocol && (
         <span
-          className={`px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider rounded border ${
+          className={`inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-normal uppercase tracking-wider rounded border leading-none ${
             protocol.toLowerCase() === 'wireguard'
               ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25'
               : protocol.toLowerCase() === 'awg'
@@ -32,31 +32,31 @@ export const ProtocolBadges: React.FC<ProtocolBadgeProps> = ({
       )}
 
       {security && security.toLowerCase() === 'reality' && (
-        <span className="px-1.5 py-0.5 text-[9px] font-semibold uppercase rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+        <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-normal uppercase rounded border border-emerald-500/25 bg-emerald-500/15 text-emerald-300 leading-none">
           REALITY
         </span>
       )}
 
       {tls && tls.toLowerCase() === 'tls' && (
-        <span className="px-1.5 py-0.5 text-[9px] font-semibold uppercase rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/25">
+        <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-normal uppercase rounded border border-cyan-500/25 bg-cyan-500/15 text-cyan-300 leading-none">
           TLS
         </span>
       )}
 
       {tls && tls.toLowerCase() === 'none' && !security && (
-        <span className="px-1.5 py-0.5 text-[9px] font-semibold uppercase rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+        <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-normal uppercase rounded border border-rose-500/30 bg-rose-500/20 text-rose-300 leading-none">
           No TLS
         </span>
       )}
 
       {network && (
-        <span className="px-1.5 py-0.5 text-[9px] font-medium uppercase rounded bg-slate-800 text-slate-300 border border-slate-700/60">
+        <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-normal uppercase rounded border border-slate-700/60 bg-slate-800 text-slate-300 leading-none">
           {network}
         </span>
       )}
 
       {flow && (
-        <span className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-violet-500/10 text-violet-300 border border-violet-500/20">
+        <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-normal font-mono rounded border border-violet-500/20 bg-violet-500/10 text-violet-300 leading-none">
           {flow}
         </span>
       )}

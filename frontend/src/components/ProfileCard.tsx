@@ -94,13 +94,21 @@ export const ProfileCard: React.FC<ProfileCardProps> = React.memo(({
             </span>
 
             {protocol && (
-              <span className="px-1.5 py-0.2 text-[9px] font-mono uppercase font-medium bg-slate-800/90 text-indigo-300 border border-slate-700/60 rounded shrink-0">
+              <span
+                className={`inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-mono font-normal uppercase rounded border shrink-0 leading-none ${
+                  protocol.toLowerCase() === 'wireguard'
+                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25'
+                    : protocol.toLowerCase() === 'awg'
+                    ? 'bg-teal-500/15 text-teal-300 border-teal-500/25'
+                    : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/25'
+                }`}
+              >
                 {protocol}
               </span>
             )}
 
             {connection.subscriptionId && (
-              <span className="px-1 py-0.2 text-[8px] font-semibold tracking-wider rounded uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0" title="Subscription profile">
+              <span className="inline-flex items-center justify-center px-1 py-0.5 text-[8px] font-normal tracking-wider rounded uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0 leading-none" title="Subscription profile">
                 Sub
               </span>
             )}
@@ -216,7 +224,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = React.memo(({
                   {label}
                 </h3>
                 {connection.subscriptionId && (
-                  <span className="px-1 py-0.2 text-[8px] font-semibold tracking-wider rounded uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0" title="Subscription profile">
+                  <span className="inline-flex items-center justify-center px-1 py-0.5 text-[8px] font-normal tracking-wider rounded uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0 leading-none" title="Subscription profile">
                     Sub
                   </span>
                 )}

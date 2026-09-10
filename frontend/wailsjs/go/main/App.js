@@ -138,6 +138,10 @@ export function LaunchBridgeRule(arg1, arg2) {
   return window['go']['main']['App']['LaunchBridgeRule'](arg1, arg2);
 }
 
+export function NotifyWindowVisibility(arg1) {
+  return window['go']['main']['App']['NotifyWindowVisibility'](arg1);
+}
+
 export function OpenURL(arg1) {
   return window['go']['main']['App']['OpenURL'](arg1);
 }
