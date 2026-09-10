@@ -31,10 +31,28 @@ type SavedState struct {
 	TotalWritten   int64  `json:"totalWritten,omitempty"`
 }
 
+type WindowGeometry struct {
+	Width       int  `json:"width,omitempty"`
+	Height      int  `json:"height,omitempty"`
+	X           int  `json:"x,omitempty"`
+	Y           int  `json:"y,omitempty"`
+	Maximized   bool `json:"maximized,omitempty"`
+	HasPosition bool `json:"hasPosition,omitempty"`
+}
+
+type HotkeyConfig struct {
+	Enabled       bool   `json:"enabled"`
+	ToggleWindow  string `json:"toggleWindow,omitempty"`
+	ToggleConnect string `json:"toggleConnect,omitempty"`
+}
+
 type AppConfigFile struct {
 	TunnelMode     string                      `json:"tunnelMode"`
 	TunnelDeviceIP string                      `json:"tunnelDeviceIp,omitempty"`
 	TunnelDNS      string                      `json:"tunnelDns,omitempty"`
+	Window         *WindowGeometry             `json:"window,omitempty"`
+	Hotkey         *HotkeyConfig               `json:"hotkey,omitempty"`
+	CompactMode    bool                        `json:"compactMode,omitempty"`
 	Subscriptions  []subscription.Subscription `json:"subscriptions,omitempty"`
 	BridgeGroups   []bridge.BridgeGroup        `json:"bridgeGroups,omitempty"`
 	BridgeRules    []bridge.BridgeRule         `json:"bridgeRules,omitempty"`
@@ -47,9 +65,13 @@ type SaveFile struct {
 	tunnelMode     string
 	tunnelDeviceIP string
 	tunnelDNS      string
+	window         *WindowGeometry
+	hotkey         *HotkeyConfig
+	compactMode    bool
 	subscriptions  []subscription.Subscription
 	bridgeGroups   []bridge.BridgeGroup
 	bridgeRules    []bridge.BridgeRule
+	lastSavedItems []SavedState
 	mu             sync.Mutex
 }
 
@@ -73,16 +95,36 @@ func NewSaveFileWithPath(path string) *SaveFile {
 		defaultMode = "proxy"
 	}
 
+	defWin := "Ctrl+Shift+K"
+	defConn := "Ctrl+Shift+C"
+	if runtime.GOOS == "darwin" {
+		defWin = "Cmd+Shift+K"
+		defConn = "Cmd+Shift+C"
+	}
+
 	return &SaveFile{
 		filePath:       path,
 		tunnelMode:     defaultMode,
 		tunnelDeviceIP: "192.18.0.1",
 		tunnelDNS:      "8.8.8.8",
+		window: &WindowGeometry{
+			Width:       1024,
+			Height:      700,
+			HasPosition: false,
+		},
+		hotkey: &HotkeyConfig{
+			Enabled:       true,
+			ToggleWindow:  defWin,
+			ToggleConnect: defConn,
+		},
+		compactMode:    false,
 		subscriptions:  make([]subscription.Subscription, 0),
 		bridgeGroups:   make([]bridge.BridgeGroup, 0),
 		bridgeRules:    make([]bridge.BridgeRule, 0),
+		lastSavedItems: make([]SavedState, 0),
 	}
 }
+
 
 func NewSaveFile() *SaveFile {
 	home, _ := os.UserHomeDir()
@@ -242,19 +284,60 @@ func (s *SaveFile) SetBridgeRules(rules []bridge.BridgeRule) {
 	copy(s.bridgeRules, rules)
 }
 
-// Update saves list, tunnel mode, settings, subscriptions, bridge groups, and bridge rules atomically into JSON file.
-func (s *SaveFile) Update(list *connlist.Collection) {
+func (s *SaveFile) GetWindowGeometry() *WindowGeometry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	items := list.All()
-	toSave := make([]SavedState, 0, len(items))
-	for _, item := range items {
-		if item == nil {
-			continue
-		}
-		toSave = append(toSave, serialize(item))
+	if s.window == nil {
+		return &WindowGeometry{Width: 1024, Height: 700}
 	}
+	cpy := *s.window
+	return &cpy
+}
+
+func (s *SaveFile) SetWindowGeometry(geom WindowGeometry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.window = &geom
+}
+
+func (s *SaveFile) GetHotkeyConfig() *HotkeyConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.hotkey == nil {
+		defWin := "Ctrl+Shift+K"
+		defConn := "Ctrl+Shift+C"
+		if runtime.GOOS == "darwin" {
+			defWin = "Cmd+Shift+K"
+			defConn = "Cmd+Shift+C"
+		}
+		return &HotkeyConfig{Enabled: true, ToggleWindow: defWin, ToggleConnect: defConn}
+	}
+	cpy := *s.hotkey
+	return &cpy
+}
+
+func (s *SaveFile) SetHotkeyConfig(cfg HotkeyConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hotkey = &cfg
+}
+
+func (s *SaveFile) GetCompactMode() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.compactMode
+}
+
+func (s *SaveFile) SetCompactMode(compact bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.compactMode = compact
+}
+
+// SaveWindowAndSettings persists window geometry and current settings without requiring list reload.
+func (s *SaveFile) SaveWindowAndSettings() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	tMode := s.tunnelMode
 	if tMode == "" {
@@ -273,11 +356,72 @@ func (s *SaveFile) Update(list *connlist.Collection) {
 		TunnelMode:     tMode,
 		TunnelDeviceIP: devIP,
 		TunnelDNS:      dns,
+		Window:         s.window,
+		Hotkey:         s.hotkey,
+		CompactMode:    s.compactMode,
+		Subscriptions:  s.subscriptions,
+		BridgeGroups:   s.bridgeGroups,
+		BridgeRules:    s.bridgeRules,
+		Connections:    s.lastSavedItems,
+	}
+
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		slog.Error("failed to marshal config", "error", err)
+		return
+	}
+
+	err1 := saveToDisk(s.filePath, b)
+	if err1 != nil {
+		fixPathOwnership(filepath.Dir(s.filePath))
+		_ = saveToDisk(s.filePath, b)
+	}
+	if s.altPath != "" && s.altPath != s.filePath {
+		_ = saveToDisk(s.altPath, b)
+	}
+}
+
+// Update saves list, tunnel mode, settings, subscriptions, bridge groups, and bridge rules atomically into JSON file.
+func (s *SaveFile) Update(list *connlist.Collection) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := list.All()
+	toSave := make([]SavedState, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		toSave = append(toSave, serialize(item))
+	}
+	s.lastSavedItems = toSave
+
+	tMode := s.tunnelMode
+	if tMode == "" {
+		tMode = "tunnel"
+	}
+	devIP := s.tunnelDeviceIP
+	if devIP == "" {
+		devIP = "192.18.0.1"
+	}
+	dns := s.tunnelDNS
+	if dns == "" {
+		dns = "8.8.8.8"
+	}
+
+	cfg := AppConfigFile{
+		TunnelMode:     tMode,
+		TunnelDeviceIP: devIP,
+		TunnelDNS:      dns,
+		Window:         s.window,
+		Hotkey:         s.hotkey,
+		CompactMode:    s.compactMode,
 		Subscriptions:  s.subscriptions,
 		BridgeGroups:   s.bridgeGroups,
 		BridgeRules:    s.bridgeRules,
 		Connections:    toSave,
 	}
+
 
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -408,6 +552,14 @@ func (s *SaveFile) Load(list *connlist.Collection) {
 		if appCfg.BridgeRules != nil {
 			s.bridgeRules = appCfg.BridgeRules
 		}
+		if appCfg.Window != nil {
+			s.window = appCfg.Window
+		}
+		if appCfg.Hotkey != nil {
+			s.hotkey = appCfg.Hotkey
+		}
+		s.compactMode = appCfg.CompactMode
+		s.lastSavedItems = appCfg.Connections
 		s.mu.Unlock()
 
 		for _, item := range appCfg.Connections {
@@ -415,6 +567,7 @@ func (s *SaveFile) Load(list *connlist.Collection) {
 				slog.Error("failed to load item", "error", err, "label", item.Label)
 			}
 		}
+
 
 		// If loaded from alternate or legacy path, sync to primary target
 		if loadedFrom != s.filePath {

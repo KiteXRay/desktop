@@ -187,3 +187,75 @@ func TestSaveFile_FallbackAndMigration(t *testing.T) {
 	assert.Contains(t, string(primaryData), "192.18.0.99")
 }
 
+func TestSaveFile_WindowGeometryAndHotkeys(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "connections.json")
+
+	sf1 := NewSaveFileWithPath(cfgPath)
+	sf1.SetWindowGeometry(WindowGeometry{
+		Width:       1280,
+		Height:      800,
+		X:           100,
+		Y:           150,
+		Maximized:   false,
+		HasPosition: true,
+	})
+	sf1.SetHotkeyConfig(HotkeyConfig{
+		Enabled:       true,
+		ToggleWindow:  "Ctrl+Alt+K",
+		ToggleConnect: "Ctrl+Alt+C",
+	})
+	sf1.SetCompactMode(true)
+
+	list1 := connlist.New()
+	sf1.Update(list1)
+
+	// Verify json content
+	data, err := os.ReadFile(cfgPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"width": 1280`)
+	assert.Contains(t, string(data), `"toggleWindow": "Ctrl+Alt+K"`)
+	assert.Contains(t, string(data), `"compactMode": true`)
+
+	// Load into sf2
+	sf2 := NewSaveFileWithPath(cfgPath)
+	list2 := connlist.New()
+	sf2.Load(list2)
+
+	geom := sf2.GetWindowGeometry()
+	require.NotNil(t, geom)
+	assert.Equal(t, 1280, geom.Width)
+	assert.Equal(t, 800, geom.Height)
+	assert.Equal(t, 100, geom.X)
+	assert.Equal(t, 150, geom.Y)
+	assert.True(t, geom.HasPosition)
+
+	hk := sf2.GetHotkeyConfig()
+	require.NotNil(t, hk)
+	assert.True(t, hk.Enabled)
+	assert.Equal(t, "Ctrl+Alt+K", hk.ToggleWindow)
+	assert.Equal(t, "Ctrl+Alt+C", hk.ToggleConnect)
+
+	assert.True(t, sf2.GetCompactMode())
+
+	// Test SaveWindowAndSettings directly
+	sf2.SetWindowGeometry(WindowGeometry{
+		Width:       1400,
+		Height:      900,
+		X:           200,
+		Y:           250,
+		Maximized:   true,
+		HasPosition: true,
+	})
+	sf2.SaveWindowAndSettings()
+
+	sf3 := NewSaveFileWithPath(cfgPath)
+	sf3.Load(connlist.New())
+	geom3 := sf3.GetWindowGeometry()
+	require.NotNil(t, geom3)
+	assert.Equal(t, 1400, geom3.Width)
+	assert.Equal(t, 900, geom3.Height)
+	assert.True(t, geom3.Maximized)
+}
+
+

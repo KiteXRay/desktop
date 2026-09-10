@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/energye/systray"
 	"github.com/wailsapp/wails/v2"
@@ -214,12 +215,10 @@ func (tc *TrayController) updateMenu() {
 	tc.mOpen = systray.AddMenuItem("Open Kite", "Show main application window")
 	tc.mOpen.Click(func() {
 		go func() {
-			if tc.app.ctx != nil {
-				wruntime.WindowShow(tc.app.ctx)
-				wruntime.WindowUnminimise(tc.app.ctx)
-			}
+			tc.app.ShowWindow()
 		}()
 	})
+
 	systray.AddSeparator()
 
 	tc.mMode = systray.AddMenuItem("Mode", "Switch routing mode")
@@ -342,10 +341,7 @@ func setupSystray(app *App) *TrayController {
 		// registering SetOnClick/SetOnRClick intercepts clicks and suppresses menu display.
 		if runtime.GOOS != "darwin" {
 			systray.SetOnClick(func(menu systray.IMenu) {
-				if app.ctx != nil {
-					wruntime.WindowShow(app.ctx)
-					wruntime.WindowUnminimise(app.ctx)
-				}
+				app.ShowWindow()
 			})
 
 			systray.SetOnRClick(func(menu systray.IMenu) {
@@ -399,6 +395,14 @@ func main() {
 	app := NewApp()
 	var tc *TrayController
 
+	geom := app.saveFile.GetWindowGeometry()
+	startWidth := 1024
+	startHeight := 700
+	if geom != nil && geom.Width >= 400 && geom.Height >= 500 {
+		startWidth = geom.Width
+		startHeight = geom.Height
+	}
+
 	// Gracefully handle terminal Ctrl+C and termination signals
 	sigChan := make(chan os.Signal, 2)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
@@ -420,10 +424,10 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:             AppTitleName,
-		Width:             1024,
-		Height:            700,
-		MinWidth:          820,
-		MinHeight:         580,
+		Width:             startWidth,
+		Height:            startHeight,
+		MinWidth:          400,
+		MinHeight:         520,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
@@ -432,9 +436,20 @@ func main() {
 			tc = setupSystray(app)
 			dock.SetWindowIconFromPNG(appIcon)
 			app.startup(ctx)
-			wruntime.Show(ctx)
-			wruntime.WindowShow(ctx)
-			wruntime.WindowUnminimise(ctx)
+			if geom != nil && geom.Maximized {
+				wruntime.WindowMaximise(ctx)
+			} else {
+				wruntime.Show(ctx)
+				wruntime.WindowShow(ctx)
+				wruntime.WindowUnminimise(ctx)
+				if geom != nil && geom.HasPosition {
+					wruntime.WindowSetPosition(ctx, geom.X, geom.Y)
+					go func() {
+						time.Sleep(60 * time.Millisecond)
+						wruntime.WindowSetPosition(ctx, geom.X, geom.Y)
+					}()
+				}
+			}
 		},
 		OnShutdown: func(ctx context.Context) {
 			if tc != nil && tc.stopTray != nil {
@@ -442,6 +457,7 @@ func main() {
 			}
 			app.shutdown(ctx)
 		},
+
 		HideWindowOnClose: true,
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "e8b62569-8c9b-4f8a-9d45-7b034e5d4761",

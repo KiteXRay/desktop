@@ -31,6 +31,7 @@ import (
 	"github.com/KiteXRay/desktop/internal/bridge"
 	"github.com/KiteXRay/desktop/internal/connlist"
 	"github.com/KiteXRay/desktop/internal/osspecific/clean"
+	"github.com/KiteXRay/desktop/internal/osspecific/hotkey"
 	"github.com/KiteXRay/desktop/internal/osspecific/networkready"
 	"github.com/KiteXRay/desktop/internal/osspecific/proxy"
 	"github.com/KiteXRay/desktop/internal/osspecific/root"
@@ -40,7 +41,14 @@ import (
 	xray3 "github.com/lilendian0x00/xray-knife/v3/pkg/xray"
 )
 
+type HotkeySettingsDTO struct {
+	Enabled       bool   `json:"enabled"`
+	ToggleWindow  string `json:"toggleWindow"`
+	ToggleConnect string `json:"toggleConnect"`
+}
+
 type ProxyEndpointsDTO struct {
+
 	Socks5Host string `json:"socks5Host"`
 	Socks5Port int    `json:"socks5Port"`
 	HTTPHost   string `json:"httpHost"`
@@ -125,6 +133,11 @@ type App struct {
 	isUpdating     bool
 	updateCancel   context.CancelFunc
 	latestRelease  *updater.ReleaseInfo
+	windowMu       sync.Mutex
+	windowVisible  bool
+	lastGeom       WindowGeometry
+	hotkeyMgr      hotkey.Manager
+	quitting       atomic.Bool
 }
 
 func NewApp() *App {
@@ -132,10 +145,15 @@ func NewApp() *App {
 	saveFile := NewSaveFile()
 
 	app := &App{
-		items:      items,
-		saveFile:   saveFile,
-		stopTicker: make(chan struct{}),
-		tunnelMode: saveFile.GetTunnelMode(),
+		items:         items,
+		saveFile:      saveFile,
+		stopTicker:    make(chan struct{}),
+		tunnelMode:    saveFile.GetTunnelMode(),
+		windowVisible: true,
+	}
+
+	if geom := saveFile.GetWindowGeometry(); geom != nil {
+		app.lastGeom = *geom
 	}
 
 	saveFile.Load(items)
@@ -174,6 +192,9 @@ func (a *App) SetActiveID(id string) {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.windowVisible = true
+	a.hotkeyMgr = hotkey.NewManager()
+	a.setupHotkeys()
 	_ = clean.ClearStuckNetwork()
 	go a.startStatsTicker()
 	a.startSleepWatcher()
@@ -187,10 +208,18 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) shutdown(ctx context.Context) {
+	a.quitting.Store(true)
+	if a.hotkeyMgr != nil {
+		_ = a.hotkeyMgr.Close()
+	}
 	if a.sleepWatcher != nil {
 		a.sleepWatcher.Stop()
 	}
-	close(a.stopTicker)
+	select {
+	case <-a.stopTicker:
+	default:
+		close(a.stopTicker)
+	}
 	_ = a.Disconnect()
 }
 
@@ -198,12 +227,19 @@ func (a *App) startStatsTicker() {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 	flushTicks := 0
+	geoTicks := 0
 
 	for {
 		select {
 		case <-a.stopTicker:
 			return
 		case <-ticker.C:
+			geoTicks++
+			if geoTicks >= 2 {
+				geoTicks = 0
+				a.checkWindowGeometryChanged()
+			}
+
 			actID := a.ActiveID()
 			if actID != "" {
 				if a.ctx != nil {
@@ -219,6 +255,7 @@ func (a *App) startStatsTicker() {
 		}
 	}
 }
+
 
 func (a *App) GetConnections() []ConnectionDTO {
 	allItems := a.items.All()
@@ -573,6 +610,14 @@ func (a *App) ClearStuckTun() error {
 
 func (a *App) Quit() {
 	slog.Info("Quit requested, terminating application...")
+	a.SaveWindowGeometry()
+	a.quitting.Store(true)
+	select {
+	case <-a.stopTicker:
+	default:
+		close(a.stopTicker)
+	}
+
 	go func() {
 		// Set a deadline for graceful cleanup
 		done := make(chan struct{})
@@ -1945,4 +1990,222 @@ func (a *App) LaunchBridgeRule(ruleID string, exePath string) error {
 	}
 	return bridge.LaunchWithProxy(target, rule.ProxyTarget, rule.ProxyType)
 }
+
+func (a *App) SaveWindowGeometry() {
+	if a.ctx == nil || a.quitting.Load() {
+		return
+	}
+	a.windowMu.Lock()
+	if !a.windowVisible {
+		a.windowMu.Unlock()
+		return
+	}
+	a.windowMu.Unlock()
+
+	if wruntime.WindowIsMinimised(a.ctx) {
+		return
+	}
+	w, h := wruntime.WindowGetSize(a.ctx)
+	if w < 400 || h < 500 {
+		return
+	}
+	isMax := wruntime.WindowIsMaximised(a.ctx)
+	x, y := wruntime.WindowGetPosition(a.ctx)
+
+	geom := a.saveFile.GetWindowGeometry()
+	if geom == nil {
+		geom = &WindowGeometry{Width: 1024, Height: 700}
+	}
+	geom.Maximized = isMax
+	geom.HasPosition = true
+	geom.X = x
+	geom.Y = y
+	if !isMax {
+		geom.Width = w
+		geom.Height = h
+	}
+	a.saveFile.SetWindowGeometry(*geom)
+	a.saveFile.SaveWindowAndSettings()
+}
+
+func (a *App) checkWindowGeometryChanged() {
+	if a.ctx == nil || a.quitting.Load() {
+		return
+	}
+	a.windowMu.Lock()
+	if !a.windowVisible {
+		a.windowMu.Unlock()
+		return
+	}
+	a.windowMu.Unlock()
+
+	if wruntime.WindowIsMinimised(a.ctx) {
+		return
+	}
+	w, h := wruntime.WindowGetSize(a.ctx)
+	if w < 400 || h < 500 {
+		return
+	}
+	isMax := wruntime.WindowIsMaximised(a.ctx)
+	x, y := wruntime.WindowGetPosition(a.ctx)
+
+	a.windowMu.Lock()
+	changed := false
+	if a.lastGeom.Maximized != isMax {
+		changed = true
+	}
+	if !isMax && (a.lastGeom.Width != w || a.lastGeom.Height != h || a.lastGeom.X != x || a.lastGeom.Y != y) {
+		changed = true
+	}
+	if changed {
+		a.lastGeom = WindowGeometry{
+			Width:       w,
+			Height:      h,
+			X:           x,
+			Y:           y,
+			Maximized:   isMax,
+			HasPosition: true,
+		}
+		a.windowMu.Unlock()
+		a.saveFile.SetWindowGeometry(a.lastGeom)
+		a.saveFile.SaveWindowAndSettings()
+	} else {
+		a.windowMu.Unlock()
+	}
+}
+
+func (a *App) ToggleWindow() {
+	if a.ctx == nil {
+		return
+	}
+	if wruntime.WindowIsMinimised(a.ctx) {
+		wruntime.WindowUnminimise(a.ctx)
+		wruntime.WindowShow(a.ctx)
+		return
+	}
+	a.windowMu.Lock()
+	defer a.windowMu.Unlock()
+	if a.windowVisible {
+		a.SaveWindowGeometry()
+		wruntime.WindowHide(a.ctx)
+		a.windowVisible = false
+	} else {
+		wruntime.WindowShow(a.ctx)
+		wruntime.WindowUnminimise(a.ctx)
+		a.windowVisible = true
+	}
+}
+
+func (a *App) ShowWindow() {
+	if a.ctx == nil {
+		return
+	}
+	a.windowMu.Lock()
+	a.windowVisible = true
+	a.windowMu.Unlock()
+	wruntime.WindowShow(a.ctx)
+	wruntime.WindowUnminimise(a.ctx)
+}
+
+func (a *App) HideWindow() {
+	if a.ctx == nil {
+		return
+	}
+	a.SaveWindowGeometry()
+	a.windowMu.Lock()
+	a.windowVisible = false
+	a.windowMu.Unlock()
+	wruntime.WindowHide(a.ctx)
+}
+
+func (a *App) ToggleActiveConnection() {
+	actID := a.ActiveID()
+	if actID != "" {
+		_ = a.Disconnect()
+		return
+	}
+	items := a.items.All()
+	if len(items) == 0 {
+		return
+	}
+	_ = a.Connect(items[0].ID())
+}
+
+func (a *App) GetHotkeySettings() HotkeySettingsDTO {
+	cfg := a.saveFile.GetHotkeyConfig()
+	if cfg == nil {
+		defWin := "Ctrl+Shift+K"
+		defConn := "Ctrl+Shift+C"
+		if runtime.GOOS == "darwin" {
+			defWin = "Cmd+Shift+K"
+			defConn = "Cmd+Shift+C"
+		}
+		return HotkeySettingsDTO{
+			Enabled:       true,
+			ToggleWindow:  defWin,
+			ToggleConnect: defConn,
+		}
+	}
+	return HotkeySettingsDTO{
+		Enabled:       cfg.Enabled,
+		ToggleWindow:  cfg.ToggleWindow,
+		ToggleConnect: cfg.ToggleConnect,
+	}
+}
+
+func (a *App) SetHotkeySettings(settings HotkeySettingsDTO) error {
+	cfg := HotkeyConfig{
+		Enabled:       settings.Enabled,
+		ToggleWindow:  strings.TrimSpace(settings.ToggleWindow),
+		ToggleConnect: strings.TrimSpace(settings.ToggleConnect),
+	}
+	a.saveFile.SetHotkeyConfig(cfg)
+	a.saveFile.SaveWindowAndSettings()
+
+	a.setupHotkeys()
+	return nil
+}
+
+func (a *App) setupHotkeys() {
+	if a.hotkeyMgr == nil {
+		return
+	}
+	a.hotkeyMgr.UnregisterAll()
+
+	cfg := a.saveFile.GetHotkeyConfig()
+	if cfg == nil || !cfg.Enabled {
+		return
+	}
+
+	if cfg.ToggleWindow != "" {
+		err := a.hotkeyMgr.Register(cfg.ToggleWindow, func() {
+			a.ToggleWindow()
+		})
+		if err != nil {
+			slog.Warn("Failed to register toggle window hotkey", "shortcut", cfg.ToggleWindow, "error", err)
+		}
+	}
+
+	if cfg.ToggleConnect != "" {
+		err := a.hotkeyMgr.Register(cfg.ToggleConnect, func() {
+			a.ToggleActiveConnection()
+		})
+		if err != nil {
+			slog.Warn("Failed to register toggle connection hotkey", "shortcut", cfg.ToggleConnect, "error", err)
+		}
+	}
+}
+
+func (a *App) GetCompactMode() bool {
+	return a.saveFile.GetCompactMode()
+}
+
+func (a *App) SetCompactMode(compact bool) {
+	a.saveFile.SetCompactMode(compact)
+	a.saveFile.SaveWindowAndSettings()
+	if a.ctx != nil {
+		wruntime.EventsEmit(a.ctx, "compact_mode:changed", compact)
+	}
+}
+
 

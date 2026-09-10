@@ -1,5 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { ExternalLink, Cpu, Activity, HelpCircle, RefreshCw, CheckCircle2, Sparkles, Download, Loader2 } from 'lucide-react';
+import {
+  ExternalLink,
+  Cpu,
+  Activity,
+  HelpCircle,
+  RefreshCw,
+  CheckCircle2,
+  Sparkles,
+  Download,
+  Loader2,
+  Globe,
+  Network,
+  Layers,
+  ShieldCheck,
+  Zap,
+  Keyboard,
+} from 'lucide-react';
 import { api } from '../api/wails';
 import type { AppInfoDTO, ReleaseInfo, UpdateProgress } from '../types';
 
@@ -70,13 +86,18 @@ export const AboutView: React.FC<AboutViewProps> = ({
           className="w-16 h-16 rounded-2xl border border-indigo-500/30 shadow-xl object-cover"
         />
         <div>
-          <h2 className="text-xl font-bold text-slate-100">{appInfo?.name || 'Kite'}</h2>
+          <h2 className="text-xl font-bold text-slate-100 flex items-center justify-center gap-2">
+            <span>{appInfo?.name || 'Kite'}</span>
+            <span className="text-xs font-mono font-normal text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
+              XRay
+            </span>
+          </h2>
           <p className="text-xs text-slate-400 mt-1">
             v{appInfo?.version || '1.4.2'} • {appInfo?.os || 'linux'}/{appInfo?.arch || 'amd64'}
           </p>
         </div>
         <p className="text-sm text-slate-300 max-w-md">
-          High-performance, lightweight, and modern desktop VPN client powered by XRay core.
+          High-performance, lightweight, and modern desktop VPN client powered by XRay core, Sing-Tun, and WinTun.
         </p>
 
         {/* Update Checker Section */}
@@ -197,49 +218,96 @@ export const AboutView: React.FC<AboutViewProps> = ({
         </div>
       </div>
 
-      {/* Architecture & How it works */}
+      {/* Routing Modes Architecture */}
       <div className="bg-slate-900/40 rounded-2xl p-6 border border-slate-800 flex flex-col gap-4">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
           <Cpu className="w-4 h-4 text-indigo-400" />
-          <span>How It Works</span>
+          <span>Three Routing Modes</span>
         </h3>
 
-        <ul className="space-y-2.5 text-xs text-slate-300">
-          <li className="flex items-start gap-2.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
-            <span><strong>TUN Device:</strong> The client creates a dedicated virtual network TUN interface to capture packet-level traffic.</span>
-          </li>
-          <li className="flex items-start gap-2.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
-            <span><strong>Soft Routing Rules:</strong> Only additional rules are added for the lifetime of the TUN device. Your default system routes remain intact.</span>
-          </li>
-          <li className="flex items-start gap-2.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
-            <span><strong>Direct Exception:</strong> An exception route is added for the VPN server's outbound endpoint to prevent routing loops.</span>
-          </li>
-          <li className="flex items-start gap-2.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
-            <span><strong>Clean Exit:</strong> When disconnecting or shutting down, all routing rules and virtual devices are automatically torn down and cleaned up.</span>
-          </li>
-        </ul>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-col gap-1.5">
+            <div className="flex items-center gap-2 text-xs font-semibold text-indigo-300">
+              <Globe className="w-3.5 h-3.5" />
+              <span>System Tunnel</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Virtual network adapter (Sing-Tun / WinTun) routing all system IP packets with custom IP and DNS.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-col gap-1.5">
+            <div className="flex items-center gap-2 text-xs font-semibold text-indigo-300">
+              <Network className="w-3.5 h-3.5" />
+              <span>System Proxy</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              OS-level HTTP and SOCKS5 proxy integration (WinINet / desktop proxy) without TUN driver requirements.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-col gap-1.5">
+            <div className="flex items-center gap-2 text-xs font-semibold text-indigo-300">
+              <Layers className="w-3.5 h-3.5" />
+              <span>Bridge Mode</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Per-application routing matching process executables via regex and wildcards with launcher support.
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Protocol Support */}
+      {/* Protocol & Security Support */}
       <div className="bg-slate-900/40 rounded-2xl p-6 border border-slate-800 flex flex-col gap-3">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
           <Activity className="w-4 h-4 text-emerald-400" />
-          <span>Supported Protocols</span>
+          <span>Supported Protocols & Transports</span>
         </h3>
         <p className="text-xs text-slate-400">
-          Supports all modern XRay protocols via URL scheme notations:
+          Full compatibility with modern XRay protocols, subscriptions, and security layers:
         </p>
         <div className="flex flex-wrap gap-2 text-xs font-mono">
-          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">vless://</span>
-          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">vmess://</span>
-          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">trojan://</span>
-          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">shadowsocks://</span>
-          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">VLESS + XTLS REALITY</span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">VLESS</span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">VMess</span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">Trojan</span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">Shadowsocks</span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">XTLS REALITY</span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">Vision</span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">gRPC</span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">WebSocket</span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 whitespace-nowrap">SIP008 Subscriptions</span>
         </div>
+      </div>
+
+      {/* Key Client Features */}
+      <div className="bg-slate-900/40 rounded-2xl p-6 border border-slate-800 flex flex-col gap-3">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+          <Zap className="w-4 h-4 text-amber-400" />
+          <span>Desktop Client Features</span>
+        </h3>
+        <ul className="space-y-2 text-xs text-slate-300">
+          <li className="flex items-start gap-2.5">
+            <Keyboard className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+            <span><strong>Global Hotkeys:</strong> Toggle window visibility (<code className="font-mono text-indigo-300 bg-slate-800 px-1 py-0.5 rounded">Ctrl+Shift+K</code> / <code className="font-mono text-indigo-300 bg-slate-800 px-1 py-0.5 rounded">Cmd+Shift+K</code>) and toggle VPN connection (<code className="font-mono text-indigo-300 bg-slate-800 px-1 py-0.5 rounded">Ctrl+Shift+C</code> / <code className="font-mono text-indigo-300 bg-slate-800 px-1 py-0.5 rounded">Cmd+Shift+C</code>) from any application.</span>
+          </li>
+          <li className="flex items-start gap-2.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
+            <span><strong>Window Memory:</strong> Automatically persists last window position, dimensions, and maximized state across reboots.</span>
+          </li>
+          <li className="flex items-start gap-2.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
+            <span><strong>Responsive Design & Compact Mode:</strong> Narrow view adapts down to 400px; toggle between comfortable and dense single-row (~36px) server lists with double-click to connect.</span>
+          </li>
+          <li className="flex items-start gap-2.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
+            <span><strong>Live Diagnostics & Subscriptions:</strong> Real-time 60-second rolling speed graphs, batch latency pinging (<code className="font-mono text-indigo-300 bg-slate-800 px-1 py-0.5 rounded">Ping all</code>), and one-click subscription updates.</span>
+          </li>
+          <li className="flex items-start gap-2.5">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <span><strong>Safe Teardown:</strong> Routing exceptions prevent loops; all virtual devices and routes are automatically restored upon exit.</span>
+          </li>
+        </ul>
       </div>
     </div>
   );

@@ -70,8 +70,16 @@ export function GetClipboardText() {
   return window['go']['main']['App']['GetClipboardText']();
 }
 
+export function GetCompactMode() {
+  return window['go']['main']['App']['GetCompactMode']();
+}
+
 export function GetConnections() {
   return window['go']['main']['App']['GetConnections']();
+}
+
+export function GetHotkeySettings() {
+  return window['go']['main']['App']['GetHotkeySettings']();
 }
 
 export function GetInstalledApps() {
@@ -104,6 +112,10 @@ export function GetTunnelSettings() {
 
 export function GrantNetworkPrivileges() {
   return window['go']['main']['App']['GrantNetworkPrivileges']();
+}
+
+export function HideWindow() {
+  return window['go']['main']['App']['HideWindow']();
 }
 
 export function ImportWireguardConfig(arg1, arg2) {
@@ -162,12 +174,24 @@ export function SaveBridgeRules(arg1) {
   return window['go']['main']['App']['SaveBridgeRules'](arg1);
 }
 
+export function SaveWindowGeometry() {
+  return window['go']['main']['App']['SaveWindowGeometry']();
+}
+
 export function SelectExecutableDialog() {
   return window['go']['main']['App']['SelectExecutableDialog']();
 }
 
 export function SetActiveID(arg1) {
   return window['go']['main']['App']['SetActiveID'](arg1);
+}
+
+export function SetCompactMode(arg1) {
+  return window['go']['main']['App']['SetCompactMode'](arg1);
+}
+
+export function SetHotkeySettings(arg1) {
+  return window['go']['main']['App']['SetHotkeySettings'](arg1);
 }
 
 export function SetSystemProxy(arg1) {
@@ -182,8 +206,20 @@ export function SetTunnelSettings(arg1, arg2) {
   return window['go']['main']['App']['SetTunnelSettings'](arg1, arg2);
 }
 
+export function ShowWindow() {
+  return window['go']['main']['App']['ShowWindow']();
+}
+
 export function SwapConnections(arg1, arg2) {
   return window['go']['main']['App']['SwapConnections'](arg1, arg2);
+}
+
+export function ToggleActiveConnection() {
+  return window['go']['main']['App']['ToggleActiveConnection']();
+}
+
+export function ToggleWindow() {
+  return window['go']['main']['App']['ToggleWindow']();
 }
 
 export function UpdateAllSubscriptions() {

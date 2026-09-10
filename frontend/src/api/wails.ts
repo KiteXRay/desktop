@@ -47,9 +47,16 @@ declare global {
           GrantNetworkPrivileges(): Promise<boolean>;
           PingConnection(id: string): Promise<number>;
           PingAll(): Promise<Record<string, number>>;
+          GetHotkeySettings(): Promise<import('../types').HotkeySettingsDTO>;
+          SetHotkeySettings(settings: import('../types').HotkeySettingsDTO): Promise<void>;
+          GetCompactMode(): Promise<boolean>;
+          SetCompactMode(compact: boolean): Promise<void>;
+          ToggleWindow(): Promise<void>;
+          SaveWindowGeometry(): Promise<void>;
         };
       };
     };
+
     runtime?: {
       EventsOn(eventName: string, callback: (...args: any[]) => void): () => void;
       EventsOff(eventName: string, ...additionalEvents: string[]): void;
@@ -477,5 +484,57 @@ export const api = {
       return window.runtime.EventsOn('ping:start', callback);
     }
     return () => {};
+  },
+
+  async getHotkeySettings(): Promise<import('../types').HotkeySettingsDTO> {
+    const app = getApp();
+    if (app?.GetHotkeySettings) {
+      return app.GetHotkeySettings();
+    }
+    return { enabled: true, toggleWindow: 'Ctrl+Shift+K', toggleConnect: 'Ctrl+Shift+C' };
+  },
+
+  async setHotkeySettings(settings: import('../types').HotkeySettingsDTO): Promise<void> {
+    const app = getApp();
+    if (app?.SetHotkeySettings) {
+      return app.SetHotkeySettings(settings);
+    }
+  },
+
+  async getCompactMode(): Promise<boolean> {
+    const app = getApp();
+    if (app?.GetCompactMode) {
+      return app.GetCompactMode();
+    }
+    return false;
+  },
+
+  async setCompactMode(compact: boolean): Promise<void> {
+    const app = getApp();
+    if (app?.SetCompactMode) {
+      return app.SetCompactMode(compact);
+    }
+  },
+
+  async toggleWindow(): Promise<void> {
+    const app = getApp();
+    if (app?.ToggleWindow) {
+      return app.ToggleWindow();
+    }
+  },
+
+  async saveWindowGeometry(): Promise<void> {
+    const app = getApp();
+    if (app?.SaveWindowGeometry) {
+      return app.SaveWindowGeometry();
+    }
+  },
+
+  onCompactModeChanged(callback: (compact: boolean) => void): () => void {
+    if (window.runtime?.EventsOn) {
+      return window.runtime.EventsOn('compact_mode:changed', callback);
+    }
+    return () => {};
   }
 };
+

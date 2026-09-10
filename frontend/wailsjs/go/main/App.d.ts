@@ -40,7 +40,11 @@ export function GetBridgeRules():Promise<Array<bridge.BridgeRule>>;
 
 export function GetClipboardText():Promise<string>;
 
+export function GetCompactMode():Promise<boolean>;
+
 export function GetConnections():Promise<Array<main.ConnectionDTO>>;
+
+export function GetHotkeySettings():Promise<main.HotkeySettingsDTO>;
 
 export function GetInstalledApps():Promise<Array<appscan.AppInfo>>;
 
@@ -57,6 +61,8 @@ export function GetTunnelMode():Promise<string>;
 export function GetTunnelSettings():Promise<main.TunnelSettingsDTO>;
 
 export function GrantNetworkPrivileges():Promise<boolean>;
+
+export function HideWindow():Promise<void>;
 
 export function ImportWireguardConfig(arg1:string,arg2:string):Promise<main.ConnectionDTO>;
 
@@ -86,9 +92,15 @@ export function SaveBridgeGroups(arg1:Array<bridge.BridgeGroup>):Promise<void>;
 
 export function SaveBridgeRules(arg1:Array<bridge.BridgeRule>):Promise<void>;
 
+export function SaveWindowGeometry():Promise<void>;
+
 export function SelectExecutableDialog():Promise<string>;
 
 export function SetActiveID(arg1:string):Promise<void>;
+
+export function SetCompactMode(arg1:boolean):Promise<void>;
+
+export function SetHotkeySettings(arg1:main.HotkeySettingsDTO):Promise<void>;
 
 export function SetSystemProxy(arg1:boolean):Promise<void>;
 
@@ -96,7 +108,13 @@ export function SetTunnelMode(arg1:string):Promise<void>;
 
 export function SetTunnelSettings(arg1:string,arg2:string):Promise<void>;
 
+export function ShowWindow():Promise<void>;
+
 export function SwapConnections(arg1:number,arg2:number):Promise<void>;
+
+export function ToggleActiveConnection():Promise<void>;
+
+export function ToggleWindow():Promise<void>;
 
 export function UpdateAllSubscriptions():Promise<void>;
 

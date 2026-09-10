@@ -12,14 +12,16 @@ import {
   AlertCircle,
   Terminal,
   ShieldCheck,
+  Sliders,
+  Keyboard,
 } from 'lucide-react';
 import { api } from '../api/wails';
-import type { ProxyEndpointsDTO } from '../types';
+import type { ProxyEndpointsDTO, HotkeySettingsDTO } from '../types';
 import { BridgeView } from './BridgeView';
 
 interface ModeSettingsModalProps {
   isOpen: boolean;
-  initialTab?: 'tunnel' | 'proxy' | 'bridge';
+  initialTab?: 'tunnel' | 'proxy' | 'bridge' | 'general';
   onClose: () => void;
   onResetTun?: () => Promise<void>;
   isResettingTun?: boolean;
@@ -40,7 +42,7 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
   onConnect,
   showToast,
 }) => {
-  const [activeTab, setActiveTab] = useState<'tunnel' | 'proxy' | 'bridge'>('tunnel');
+  const [activeTab, setActiveTab] = useState<'tunnel' | 'proxy' | 'bridge' | 'general'>('tunnel');
 
   // Tunnel state
   const [deviceIP, setDeviceIP] = useState('192.18.0.1');
@@ -62,6 +64,17 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
   });
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [cliShell, setCliShell] = useState<'bash' | 'powershell' | 'cmd'>('bash');
+
+  // General & Hotkeys state
+  const [hotkeySettings, setHotkeySettings] = useState<HotkeySettingsDTO>({
+    enabled: true,
+    toggleWindow: 'Ctrl+Shift+K',
+    toggleConnect: 'Ctrl+Shift+C',
+  });
+  const [isCompact, setIsCompact] = useState(false);
+  const [hotkeySaving, setHotkeySaving] = useState(false);
+  const [hotkeySaved, setHotkeySaved] = useState(false);
+  const [hotkeyError, setHotkeyError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -91,8 +104,21 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
       .then((res) => setEndpoints(res))
       .catch((err) => console.error('Failed to get proxy endpoints:', err));
 
+    // Load Hotkey & Compact settings
+    api.getHotkeySettings()
+      .then((hk) => {
+        if (hk) setHotkeySettings(hk);
+      })
+      .catch((err) => console.error('Failed to get hotkey settings:', err));
+
+    api.getCompactMode()
+      .then((comp) => setIsCompact(comp))
+      .catch((err) => console.error('Failed to get compact mode:', err));
+
     setTunnelError(null);
     setTunnelSaved(false);
+    setHotkeyError(null);
+    setHotkeySaved(false);
 
     return () => {
       unsubTunnel();
@@ -174,6 +200,33 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  const handleSaveHotkeys = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setHotkeySaving(true);
+    setHotkeyError(null);
+    try {
+      await api.setHotkeySettings(hotkeySettings);
+      setHotkeySaved(true);
+      showToast?.('Global hotkey settings saved', 'success');
+      setTimeout(() => setHotkeySaved(false), 2500);
+    } catch (err: any) {
+      setHotkeyError(err?.message || 'Failed to save hotkeys');
+    } finally {
+      setHotkeySaving(false);
+    }
+  };
+
+  const handleToggleCompact = async () => {
+    const next = !isCompact;
+    setIsCompact(next);
+    try {
+      await api.setCompactMode(next);
+      showToast?.(next ? 'Compact view enabled' : 'Comfortable view enabled', 'info');
+    } catch {
+      showToast?.('Failed to save compact mode preference', 'error');
+    }
+  };
+
   const dnsPresets = [
     { label: 'Google (8.8.8.8)', value: '8.8.8.8' },
     { label: 'Cloudflare (1.1.1.1)', value: '1.1.1.1' },
@@ -181,81 +234,95 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-150">
       <div
-        className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]"
+        className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal Header with 3 Tabs */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-800 bg-slate-900/90 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
-              <Settings className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                Routing Mode Settings
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Configure parameters for Tunnel, Proxy, and Bridge modes
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* 3-tab segmented control */}
-            <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0">
-              <button
-                type="button"
-                onClick={() => setActiveTab('tunnel')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                  activeTab === 'tunnel'
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Globe className="w-3.5 h-3.5" />
-                <span>Tunnel</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('proxy')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                  activeTab === 'proxy'
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Network className="w-3.5 h-3.5" />
-                <span>Proxy</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('bridge')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                  activeTab === 'bridge'
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>Bridge</span>
-              </button>
+        {/* Modal Header */}
+        <div className="flex flex-col gap-3 px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-800 bg-slate-900/90 shrink-0">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+                <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm sm:text-base font-bold text-slate-100 truncate">
+                  Routing Mode Settings
+                </h2>
+                <p className="text-[11px] sm:text-xs text-slate-400 truncate">
+                  Configure parameters for Tunnel, Proxy, and Bridge modes
+                </p>
+              </div>
             </div>
 
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-auto"
+              title="Close Settings"
             >
               <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* 4-tab segmented control */}
+          <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto no-scrollbar max-w-full w-full">
+            <button
+              type="button"
+              onClick={() => setActiveTab('tunnel')}
+              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap flex-1 ${
+                activeTab === 'tunnel'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5 shrink-0" />
+              <span>Tunnel</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('proxy')}
+              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap flex-1 ${
+                activeTab === 'proxy'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Network className="w-3.5 h-3.5 shrink-0" />
+              <span>Proxy</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('bridge')}
+              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap flex-1 ${
+                activeTab === 'bridge'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 shrink-0" />
+              <span>Bridge</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('general')}
+              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap flex-1 ${
+                activeTab === 'general'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5 shrink-0" />
+              <span>General</span>
             </button>
           </div>
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
           {/* TAB 1: TUNNEL */}
           {activeTab === 'tunnel' && (
             <div className="space-y-6 max-w-2xl mx-auto animate-in fade-in duration-150">
@@ -378,18 +445,18 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
               </div>
 
               {/* System Proxy Toggle Card */}
-              <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center border transition-all ${
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 transition-all ${
                     systemProxyEnabled
                       ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                       : 'bg-slate-800 border-slate-700 text-slate-400'
                   }`}>
                     <ShieldCheck className="w-5 h-5" />
                   </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-100 flex items-center gap-2">
-                      System Proxy Integration
+                  <div className="min-w-0">
+                    <h4 className="text-xs font-bold text-slate-100 flex items-center gap-2 flex-wrap">
+                      <span>System Proxy Integration</span>
                       <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border ${
                         systemProxyEnabled
                           ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
@@ -408,7 +475,7 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
                   type="button"
                   onClick={handleToggleSystemProxy}
                   disabled={proxyLoading}
-                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 w-full sm:w-auto ${
                     systemProxyEnabled
                       ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40'
                       : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/20 shadow-md'
@@ -541,6 +608,124 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
                 activeLabel={activeLabel}
                 onConnect={onConnect}
               />
+            </div>
+          )}
+
+          {/* TAB 4: GENERAL / SHORTCUTS */}
+          {activeTab === 'general' && (
+            <div className="space-y-6 max-w-2xl mx-auto animate-in fade-in duration-150">
+              {/* Hotkey Section */}
+              <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800">
+                <div className="flex items-center justify-between gap-3 mb-1.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Keyboard className="w-4 h-4 text-indigo-400 shrink-0" />
+                    <h3 className="text-sm font-bold text-slate-100 truncate">Global Shortcuts</h3>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={hotkeySettings.enabled}
+                      onChange={(e) =>
+                        setHotkeySettings((prev) => ({ ...prev, enabled: e.target.checked }))
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-800 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  System-wide hotkeys allow toggling the application window and switching connection state from anywhere.
+                </p>
+              </div>
+
+              <form onSubmit={handleSaveHotkeys} className="space-y-4">
+                {hotkeyError && (
+                  <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-center gap-2.5 text-xs text-rose-300">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{hotkeyError}</span>
+                  </div>
+                )}
+
+                {hotkeySaved && (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2.5 text-xs text-emerald-300">
+                    <Check className="w-4 h-4 shrink-0" />
+                    <span>Shortcut settings saved successfully!</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Toggle Window Shortcut
+                  </label>
+                  <input
+                    type="text"
+                    value={hotkeySettings.toggleWindow}
+                    onChange={(e) =>
+                      setHotkeySettings((prev) => ({ ...prev, toggleWindow: e.target.value }))
+                    }
+                    placeholder="Ctrl+Shift+K"
+                    disabled={!hotkeySettings.enabled}
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950/70 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-100 placeholder-slate-600 text-xs font-mono transition-colors outline-hidden disabled:opacity-50"
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    Shows or hides the Kite application window (e.g. Ctrl+Shift+K or Cmd+Shift+K).
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Toggle Connection Shortcut
+                  </label>
+                  <input
+                    type="text"
+                    value={hotkeySettings.toggleConnect}
+                    onChange={(e) =>
+                      setHotkeySettings((prev) => ({ ...prev, toggleConnect: e.target.value }))
+                    }
+                    placeholder="Ctrl+Shift+C"
+                    disabled={!hotkeySettings.enabled}
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950/70 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-100 placeholder-slate-600 text-xs font-mono transition-colors outline-hidden disabled:opacity-50"
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    Connects to last active profile or disconnects active VPN session (e.g. Ctrl+Shift+C or Cmd+Shift+C).
+                  </p>
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="submit"
+                    disabled={hotkeySaving}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/20 active:scale-95 transition-all cursor-pointer"
+                  >
+                    {hotkeySaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    <span>Save Shortcuts</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* Interface Preferences */}
+              <div className="pt-4 border-t border-slate-800 space-y-3">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Display & Layout
+                </h4>
+                <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-slate-200">Compact Profile Cards</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      Display servers in a dense, single-row (~36px) list with quick actions on hover.
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                    <input
+                      type="checkbox"
+                      checked={isCompact}
+                      onChange={handleToggleCompact}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-800 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -341,12 +341,12 @@ export const BridgeView: React.FC<BridgeViewProps> = () => {
       {/* Top Banner / Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-xs">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center flex-wrap gap-2">
             <h2 className="text-base font-semibold text-slate-100 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-indigo-400" />
-              Bridge Mode Rules
+              <Layers className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span>Bridge Mode Rules</span>
             </h2>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 whitespace-nowrap shrink-0">
               Regex & Wildcard
             </span>
           </div>
@@ -416,14 +416,14 @@ export const BridgeView: React.FC<BridgeViewProps> = () => {
                   className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 bg-slate-900/80 border-b border-slate-800/80 cursor-pointer hover:bg-slate-900 select-none transition-colors"
                 >
                   {/* Left: Collapse, Icon, Name, Count */}
-                  <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex items-center flex-wrap gap-2 sm:gap-2.5 min-w-0">
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleGroupCollapse(group.id);
                       }}
-                      className="p-1 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                      className="p-1 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer shrink-0"
                       title={isCollapsed ? 'Expand group' : 'Collapse group'}
                     >
                       <ChevronDown
@@ -445,20 +445,20 @@ export const BridgeView: React.FC<BridgeViewProps> = () => {
                         type="button"
                         onClick={(e) => handleOpenEditGroupModal(group, e)}
                         title="Rename Group"
-                        className="p-1 rounded-md text-slate-500 hover:text-indigo-300 hover:bg-slate-800 transition-colors cursor-pointer"
+                        className="p-1 rounded-md text-slate-500 hover:text-indigo-300 hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
                       >
                         <Pencil className="w-3 h-3" />
                       </button>
                     </div>
 
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-slate-800 text-slate-400 border border-slate-700/50 shrink-0">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-slate-800 text-slate-400 border border-slate-700/50 shrink-0 whitespace-nowrap">
                       {groupRules.length} {groupRules.length === 1 ? 'rule' : 'rules'}
                     </span>
                   </div>
 
                   {/* Right: Live Status, Enable/Disable, Quick Add, Remove */}
                   <div
-                    className="flex items-center gap-3 shrink-0 ml-auto sm:ml-0"
+                    className="flex items-center flex-wrap gap-2.5 sm:gap-3 shrink-0 ml-auto sm:ml-0"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {/* Live Status badge */}
@@ -527,12 +527,12 @@ export const BridgeView: React.FC<BridgeViewProps> = () => {
                       <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                           <thead>
-                            <tr className="border-b border-slate-800/70 bg-slate-950/40 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                              <th className="py-2.5 px-4">Process / Pattern</th>
-                              <th className="py-2.5 px-4">Proxy Target</th>
-                              <th className="py-2.5 px-4">Live Status</th>
-                              <th className="py-2.5 px-4 text-center">Enabled</th>
-                              <th className="py-2.5 px-4 text-right">Actions</th>
+                            <tr className="border-b border-slate-800/70 bg-slate-950/40 text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                              <th className="py-2.5 px-4 whitespace-nowrap">Process / Pattern</th>
+                              <th className="py-2.5 px-4 whitespace-nowrap">Proxy Target</th>
+                              <th className="py-2.5 px-4 whitespace-nowrap">Live Status</th>
+                              <th className="py-2.5 px-4 text-center whitespace-nowrap">Enabled</th>
+                              <th className="py-2.5 px-4 text-right whitespace-nowrap">Actions</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800/40 text-xs">
