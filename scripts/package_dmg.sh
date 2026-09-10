@@ -61,10 +61,8 @@ touch "${APP_PATH}"
 chmod -R 755 "${APP_PATH}"
 
 TUNNEL_BIN="${BIN_DIR}/kite-tunnel"
-if [ ! -f "${TUNNEL_BIN}" ]; then
-    echo "==> Compiling kite-tunnel helper for macOS..."
-    go build -ldflags "-s -w" -o "${TUNNEL_BIN}" "${ROOT_DIR}/cmd/kite-tunnel"
-fi
+echo "==> Compiling kite-tunnel helper for macOS..."
+go build -ldflags "-s -w" -o "${TUNNEL_BIN}" "${ROOT_DIR}/cmd/kite-tunnel"
 if [ -f "${TUNNEL_BIN}" ]; then
     cp "${TUNNEL_BIN}" "${APP_PATH}/Contents/MacOS/kite-tunnel"
     chmod 755 "${APP_PATH}/Contents/MacOS/kite-tunnel"

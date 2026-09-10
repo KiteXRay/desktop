@@ -380,13 +380,6 @@ func findTunnelBinary() string {
 			}
 		}
 	}
-	defaultPath := "/opt/kite/kite-tunnel"
-	if runtime.GOOS == "darwin" {
-		defaultPath = "/Applications/Kite.app/Contents/MacOS/kite-tunnel"
-	}
-	if _, err := os.Stat(defaultPath); err == nil {
-		return defaultPath
-	}
 	for _, rel := range []string{"build/bin/kite-tunnel", "./kite-tunnel", "cmd/kite-tunnel/kite-tunnel"} {
 		if _, err := os.Stat(rel); err == nil {
 			if abs, err := filepath.Abs(rel); err == nil {
@@ -394,6 +387,13 @@ func findTunnelBinary() string {
 			}
 			return rel
 		}
+	}
+	defaultPath := "/opt/kite/kite-tunnel"
+	if runtime.GOOS == "darwin" {
+		defaultPath = "/Applications/Kite.app/Contents/MacOS/kite-tunnel"
+	}
+	if _, err := os.Stat(defaultPath); err == nil {
+		return defaultPath
 	}
 	if p, err := exec.LookPath("kite-tunnel"); err == nil {
 		return p
