@@ -30,13 +30,13 @@ func FindTunnelBinary() (string, error) {
 		dir := filepath.Dir(exePath)
 		candidate := filepath.Join(dir, "kite-tunnel")
 		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
+			return evalPath(candidate), nil
 		}
 		// On macOS, if app is in Contents/MacOS/Kite, also check Contents/Helpers/kite-tunnel
 		if runtime.GOOS == "darwin" {
 			candidateHelper := filepath.Join(dir, "..", "Helpers", "kite-tunnel")
 			if _, err := os.Stat(candidateHelper); err == nil {
-				return filepath.Clean(candidateHelper), nil
+				return evalPath(filepath.Clean(candidateHelper)), nil
 			}
 		}
 	}
@@ -45,9 +45,9 @@ func FindTunnelBinary() (string, error) {
 	for _, rel := range []string{"build/bin/kite-tunnel", "./kite-tunnel", "cmd/kite-tunnel/kite-tunnel"} {
 		if _, err := os.Stat(rel); err == nil {
 			if abs, err := filepath.Abs(rel); err == nil {
-				return abs, nil
+				return evalPath(abs), nil
 			}
-			return rel, nil
+			return evalPath(rel), nil
 		}
 	}
 
@@ -57,13 +57,20 @@ func FindTunnelBinary() (string, error) {
 		defaultPath = "/Applications/Kite.app/Contents/MacOS/kite-tunnel"
 	}
 	if _, err := os.Stat(defaultPath); err == nil {
-		return defaultPath, nil
+		return evalPath(defaultPath), nil
 	}
 
 	// 5. Check PATH
 	if p, err := exec.LookPath("kite-tunnel"); err == nil {
-		return p, nil
+		return evalPath(p), nil
 	}
 
 	return defaultPath, errors.New("kite-tunnel executable not found")
+}
+
+func evalPath(p string) string {
+	if real, err := filepath.EvalSymlinks(p); err == nil {
+		return real
+	}
+	return p
 }

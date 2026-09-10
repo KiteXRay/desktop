@@ -17,7 +17,9 @@ echo "==> Building Kite desktop..."
 wails build
 
 if [ -d "${ROOT_DIR}/build/bin/Kite.app/Contents/MacOS" ]; then
-    cp -p "${ROOT_DIR}/build/bin/kite-tunnel" "${ROOT_DIR}/build/bin/Kite.app/Contents/MacOS/kite-tunnel"
+    cp -f "${ROOT_DIR}/build/bin/kite-tunnel" "${ROOT_DIR}/build/bin/Kite.app/Contents/MacOS/kite-tunnel"
+    sudo chown root:wheel "${ROOT_DIR}/build/bin/Kite.app/Contents/MacOS/kite-tunnel"
+    sudo chmod 4755 "${ROOT_DIR}/build/bin/Kite.app/Contents/MacOS/kite-tunnel"
 fi
 
 echo "==> Launching Kite..."

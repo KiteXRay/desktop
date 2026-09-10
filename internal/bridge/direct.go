@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"sync/atomic"
 	"syscall"
@@ -60,11 +61,16 @@ func (d *bridgeDirectProxy) DialContext(ctx context.Context, metadata *M.Metadat
 	}
 
 	network := "tcp"
-	if metadata.Network == M.TCP {
-		network = "tcp"
+	if metadata.DstIP.IsValid() {
+		if metadata.DstIP.Is4() {
+			network = "tcp4"
+		} else if metadata.DstIP.Is6() {
+			network = "tcp6"
+		}
 	}
 	conn, err := dialer.DialContext(ctx, network, dst)
 	if err != nil {
+		slog.Error("Bridge direct TCP dial failed", "network", network, "dst", dst, "iface", ifaceName, "idx", ifaceIdx, "err", err)
 		return nil, err
 	}
 
@@ -97,9 +103,14 @@ func (d *bridgeDirectProxy) DialUDP(metadata *M.Metadata) (net.PacketConn, error
 		}
 	}
 
+	network := "udp4"
+	if metadata.DstIP.IsValid() && metadata.DstIP.Is6() {
+		network = "udp6"
+	}
+
 	lc := &net.ListenConfig{
-		Control: func(network, address string, c syscall.RawConn) error {
-			return bindRawConnToInterface(c, network, address, ifaceIdx, ifaceName)
+		Control: func(netw, address string, c syscall.RawConn) error {
+			return bindRawConnToInterface(c, netw, address, ifaceIdx, ifaceName)
 		},
 	}
 
@@ -108,10 +119,11 @@ func (d *bridgeDirectProxy) DialUDP(metadata *M.Metadata) (net.PacketConn, error
 		listenAddr = net.JoinHostPort(localIP.String(), "0")
 	}
 
-	pc, err := lc.ListenPacket(context.Background(), "udp4", listenAddr)
+	pc, err := lc.ListenPacket(context.Background(), network, listenAddr)
 	if err != nil {
-		pc, err = lc.ListenPacket(context.Background(), "udp", ":0")
+		pc, err = lc.ListenPacket(context.Background(), network, ":0")
 		if err != nil {
+			slog.Error("Bridge direct UDP listen failed", "network", network, "addr", listenAddr, "iface", ifaceName, "idx", ifaceIdx, "err", err)
 			return nil, err
 		}
 	}
@@ -125,11 +137,19 @@ type bridgePacketConn struct {
 
 func (pc *bridgePacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	if udpAddr, ok := addr.(*net.UDPAddr); ok {
-		return pc.PacketConn.WriteTo(b, udpAddr)
+		n, err := pc.PacketConn.WriteTo(b, udpAddr)
+		if err != nil {
+			slog.Debug("Bridge direct UDP WriteTo failed", "dst", addr, "err", err)
+		}
+		return n, err
 	}
 	udpAddr, err := net.ResolveUDPAddr("udp", addr.String())
 	if err != nil {
 		return 0, err
 	}
-	return pc.PacketConn.WriteTo(b, udpAddr)
+	n, err := pc.PacketConn.WriteTo(b, udpAddr)
+	if err != nil {
+		slog.Debug("Bridge direct UDP WriteTo failed", "dst", addr, "err", err)
+	}
+	return n, err
 }

@@ -68,24 +68,49 @@ func GrantPrivilegesViaPkexec() error {
 
 func GrantPrivilegesAndRestart() error {
 	if tunnelBin, err := FindTunnelBinary(); err == nil && tunnelBin != "" {
+		if real, err := filepath.EvalSymlinks(tunnelBin); err == nil {
+			tunnelBin = real
+		}
+
 		asScript := `on run argv
     set targetBin to item 1 of argv
-    set scriptText to "chown root:wheel " & quoted form of targetBin & " && chmod 4755 " & quoted form of targetBin
+    set scriptText to "/usr/bin/xattr -d com.apple.quarantine " & quoted form of targetBin & " 2>/dev/null || true; /usr/sbin/chown root:wheel " & quoted form of targetBin & " && /bin/chmod 4755 " & quoted form of targetBin
     do shell script scriptText with administrator privileges
 end run`
 		cmd := exec.Command("osascript", "-e", asScript, tunnelBin)
 		out, err := cmd.CombinedOutput()
-		if err != nil {
-			outStr := strings.TrimSpace(string(out))
-			if outStr == "" {
-				return fmt.Errorf("authentication cancelled or failed: %w", err)
+		if err == nil {
+			if has, _ := HasNetworkPrivileges(); has {
+				return nil
 			}
-			return fmt.Errorf("elevation failed: %s (%w)", outStr, err)
 		}
 
-		if has, _ := HasNetworkPrivileges(); has {
-			return nil
+		// Fallback: If "do shell script with administrator privileges" was blocked by TCC/SIP,
+		// launch AppleScript instructing Terminal.app to run the sudo command directly.
+		termScript := `on run argv
+    set targetBin to item 1 of argv
+    set scriptText to "sudo /usr/bin/xattr -d com.apple.quarantine " & quoted form of targetBin & " 2>/dev/null || true; sudo /usr/sbin/chown root:wheel " & quoted form of targetBin & " && sudo /bin/chmod 4755 " & quoted form of targetBin
+    tell application "Terminal"
+        activate
+        do script scriptText
+    end tell
+end run`
+		termCmd := exec.Command("osascript", "-e", termScript, tunnelBin)
+		if termErr := termCmd.Run(); termErr == nil {
+			for i := 0; i < 6; i++ {
+				time.Sleep(500 * time.Millisecond)
+				if has, _ := HasNetworkPrivileges(); has {
+					return nil
+				}
+			}
+			return errors.New("opened Terminal to grant privileges. Please enter your password in Terminal and click 'Check Again'")
 		}
+
+		outStr := strings.TrimSpace(string(out))
+		if outStr == "" {
+			return fmt.Errorf("authentication cancelled or failed: %w", err)
+		}
+		return fmt.Errorf("elevation failed: %s (%w). Run in terminal: sudo chown root:wheel %q && sudo chmod 4755 %q", outStr, err, tunnelBin, tunnelBin)
 	}
 
 	exePath, err := os.Executable()

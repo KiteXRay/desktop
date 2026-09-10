@@ -312,6 +312,17 @@ func main() {
 	allBypassIPs := parseBypassIPs(*bypassIP, *bypassIPs)
 	bypassOptsList := setupBypassRoutes(routeManager, allBypassIPs, gw)
 
+	var cleanupBypass func()
+	if *mode == "bridge" {
+		var err error
+		cleanupBypass, err = bridge.SetupBridgeBypass(gw)
+		if err != nil {
+			emit(Event{Event: "error", Message: fmt.Sprintf("setup bridge bypass: %v", err)})
+			os.Exit(1)
+		}
+		defer cleanupBypass()
+	}
+
 	// Parse routes to TUN
 	var routesToTUN []*route.Addr
 	for _, r := range strings.Split(*routesStr, ",") {
@@ -344,6 +355,9 @@ func main() {
 	var cleanOnce sync.Once
 	cleanup := func() {
 		cleanOnce.Do(func() {
+			if cleanupBypass != nil {
+				cleanupBypass()
+			}
 			_ = routeManager.Delete(tunOpts)
 			cleanupBypassRoutes(routeManager, bypassOptsList)
 			_ = ifc.Close()
@@ -397,13 +411,6 @@ func main() {
 
 	var errPipe error
 	if *mode == "bridge" {
-		cleanupBypass, err := bridge.SetupBridgeBypass(gw)
-		if err != nil {
-			slog.Warn("failed to setup bridge bypass", "err", err)
-		} else {
-			defer cleanupBypass()
-		}
-
 		watcher := bridge.NewConfigWatcher(*configPath)
 		bd := bridge.NewBridgeDialer(*socks5, watcher.GetRules, slog.Default(), watcher.GetGroups)
 		errPipe = pipe.CopyWithDialer(ctx, metered, bd)

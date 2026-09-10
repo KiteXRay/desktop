@@ -43,5 +43,7 @@
                 <string>Viewer</string>
             </dict>
         </array>
+        <key>NSAppleEventsUsageDescription</key>
+        <string>Kite requires administrator privileges to configure secure network routing and TUN devices.</string>
     </dict>
 </plist>
