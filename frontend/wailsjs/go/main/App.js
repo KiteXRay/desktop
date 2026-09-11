@@ -78,10 +78,6 @@ export function GetConnections() {
   return window['go']['main']['App']['GetConnections']();
 }
 
-export function GetHotkeySettings() {
-  return window['go']['main']['App']['GetHotkeySettings']();
-}
-
 export function GetInstalledApps() {
   return window['go']['main']['App']['GetInstalledApps']();
 }
@@ -194,10 +190,6 @@ export function SetCompactMode(arg1) {
   return window['go']['main']['App']['SetCompactMode'](arg1);
 }
 
-export function SetHotkeySettings(arg1) {
-  return window['go']['main']['App']['SetHotkeySettings'](arg1);
-}
-
 export function SetSystemProxy(arg1) {
   return window['go']['main']['App']['SetSystemProxy'](arg1);
 }
@@ -216,10 +208,6 @@ export function ShowWindow() {
 
 export function SwapConnections(arg1, arg2) {
   return window['go']['main']['App']['SwapConnections'](arg1, arg2);
-}
-
-export function ToggleActiveConnection() {
-  return window['go']['main']['App']['ToggleActiveConnection']();
 }
 
 export function ToggleWindow() {

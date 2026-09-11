@@ -14,7 +14,6 @@ import {
   Layers,
   ShieldCheck,
   Zap,
-  Keyboard,
 } from 'lucide-react';
 import { api } from '../api/wails';
 import type { AppInfoDTO, ReleaseInfo, UpdateProgress } from '../types';
@@ -287,10 +286,6 @@ export const AboutView: React.FC<AboutViewProps> = ({
           <span>Desktop Client Features</span>
         </h3>
         <ul className="space-y-2 text-xs text-slate-300">
-          <li className="flex items-start gap-2.5">
-            <Keyboard className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-            <span><strong>Global Hotkeys:</strong> Toggle window visibility (<code className="font-mono text-indigo-300 bg-slate-800 px-1 py-0.5 rounded">Ctrl+Shift+K</code> / <code className="font-mono text-indigo-300 bg-slate-800 px-1 py-0.5 rounded">Cmd+Shift+K</code>) and toggle VPN connection (<code className="font-mono text-indigo-300 bg-slate-800 px-1 py-0.5 rounded">Ctrl+Shift+C</code> / <code className="font-mono text-indigo-300 bg-slate-800 px-1 py-0.5 rounded">Cmd+Shift+C</code>) from any application.</span>
-          </li>
           <li className="flex items-start gap-2.5">
             <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
             <span><strong>Window Memory:</strong> Automatically persists last window position, dimensions, and maximized state across reboots.</span>

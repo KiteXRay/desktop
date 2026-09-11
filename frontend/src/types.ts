@@ -138,11 +138,5 @@ export interface NetworkPrivilegesDTO {
   error?: string;
 }
 
-export interface HotkeySettingsDTO {
-  enabled: boolean;
-  toggleWindow: string;
-  toggleConnect: string;
-}
-
 
 

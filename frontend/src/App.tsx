@@ -78,7 +78,7 @@ export function App() {
   const [currentTab, setCurrentTab] = useState<'connections' | 'about'>('connections');
   const [tunnelMode, setTunnelMode] = useState<TunnelMode>('tunnel');
   const [isModeSettingsOpen, setIsModeSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'tunnel' | 'proxy' | 'bridge' | 'general'>('tunnel');
+  const [settingsTab, setSettingsTab] = useState<'tunnel' | 'proxy' | 'bridge'>('tunnel');
   const [isClearingTun, setIsClearingTun] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -451,7 +451,7 @@ export function App() {
     }
   };
 
-  const handleOpenSettings = (tab?: 'tunnel' | 'proxy' | 'bridge' | 'general') => {
+  const handleOpenSettings = (tab?: 'tunnel' | 'proxy' | 'bridge') => {
     const target = tab || (tunnelMode === 'bridge' || tunnelMode === 'per_app' ? 'bridge' : tunnelMode === 'proxy' ? 'proxy' : 'tunnel');
     setSettingsTab(target);
     setIsModeSettingsOpen(true);
@@ -640,7 +640,7 @@ export function App() {
             <button
               onClick={() => handleOpenSettings()}
               className="flex items-center justify-center w-7 h-7 rounded-full bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-indigo-400 border border-slate-800 hover:border-slate-700 transition-all shadow-xs active:scale-95 cursor-pointer shrink-0"
-              title="Routing Mode & Hotkey Settings"
+              title="Routing Mode Settings"
             >
               <Settings className="w-3.5 h-3.5" />
             </button>
@@ -892,13 +892,13 @@ export function App() {
 
             <button
               onClick={() => {
-                handleOpenSettings('general');
+                handleOpenSettings();
                 setIsMobileMenuOpen(false);
               }}
               className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 text-xs font-medium transition-colors cursor-pointer"
             >
               <Settings className="w-4 h-4 text-indigo-400" />
-              <span>Settings & Shortcuts</span>
+              <span>Routing Mode Settings</span>
             </button>
 
             <button

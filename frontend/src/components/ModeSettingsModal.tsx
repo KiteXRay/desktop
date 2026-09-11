@@ -12,16 +12,14 @@ import {
   AlertCircle,
   Terminal,
   ShieldCheck,
-  Sliders,
-  Keyboard,
 } from 'lucide-react';
 import { api } from '../api/wails';
-import type { ProxyEndpointsDTO, HotkeySettingsDTO } from '../types';
+import type { ProxyEndpointsDTO } from '../types';
 import { BridgeView } from './BridgeView';
 
 interface ModeSettingsModalProps {
   isOpen: boolean;
-  initialTab?: 'tunnel' | 'proxy' | 'bridge' | 'general';
+  initialTab?: 'tunnel' | 'proxy' | 'bridge';
   onClose: () => void;
   onResetTun?: () => Promise<void>;
   isResettingTun?: boolean;
@@ -42,7 +40,7 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
   onConnect,
   showToast,
 }) => {
-  const [activeTab, setActiveTab] = useState<'tunnel' | 'proxy' | 'bridge' | 'general'>('tunnel');
+  const [activeTab, setActiveTab] = useState<'tunnel' | 'proxy' | 'bridge'>('tunnel');
 
   // Tunnel state
   const [deviceIP, setDeviceIP] = useState('192.18.0.1');
@@ -64,17 +62,6 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
   });
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [cliShell, setCliShell] = useState<'bash' | 'powershell' | 'cmd'>('bash');
-
-  // General & Hotkeys state
-  const [hotkeySettings, setHotkeySettings] = useState<HotkeySettingsDTO>({
-    enabled: true,
-    toggleWindow: 'Ctrl+Shift+K',
-    toggleConnect: 'Ctrl+Shift+C',
-  });
-  const [isCompact, setIsCompact] = useState(false);
-  const [hotkeySaving, setHotkeySaving] = useState(false);
-  const [hotkeySaved, setHotkeySaved] = useState(false);
-  const [hotkeyError, setHotkeyError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -104,21 +91,8 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
       .then((res) => setEndpoints(res))
       .catch((err) => console.error('Failed to get proxy endpoints:', err));
 
-    // Load Hotkey & Compact settings
-    api.getHotkeySettings()
-      .then((hk) => {
-        if (hk) setHotkeySettings(hk);
-      })
-      .catch((err) => console.error('Failed to get hotkey settings:', err));
-
-    api.getCompactMode()
-      .then((comp) => setIsCompact(comp))
-      .catch((err) => console.error('Failed to get compact mode:', err));
-
     setTunnelError(null);
     setTunnelSaved(false);
-    setHotkeyError(null);
-    setHotkeySaved(false);
 
     return () => {
       unsubTunnel();
@@ -200,33 +174,6 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  const handleSaveHotkeys = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    setHotkeySaving(true);
-    setHotkeyError(null);
-    try {
-      await api.setHotkeySettings(hotkeySettings);
-      setHotkeySaved(true);
-      showToast?.('Global hotkey settings saved', 'success');
-      setTimeout(() => setHotkeySaved(false), 2500);
-    } catch (err: any) {
-      setHotkeyError(err?.message || 'Failed to save hotkeys');
-    } finally {
-      setHotkeySaving(false);
-    }
-  };
-
-  const handleToggleCompact = async () => {
-    const next = !isCompact;
-    setIsCompact(next);
-    try {
-      await api.setCompactMode(next);
-      showToast?.(next ? 'Compact view enabled' : 'Comfortable view enabled', 'info');
-    } catch {
-      showToast?.('Failed to save compact mode preference', 'error');
-    }
-  };
-
   const dnsPresets = [
     { label: 'Google (8.8.8.8)', value: '8.8.8.8' },
     { label: 'Cloudflare (1.1.1.1)', value: '1.1.1.1' },
@@ -304,19 +251,6 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
             >
               <Layers className="w-3.5 h-3.5 shrink-0" />
               <span>Bridge</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('general')}
-              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap flex-1 ${
-                activeTab === 'general'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Sliders className="w-3.5 h-3.5 shrink-0" />
-              <span>General</span>
             </button>
           </div>
         </div>
@@ -608,124 +542,6 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
                 activeLabel={activeLabel}
                 onConnect={onConnect}
               />
-            </div>
-          )}
-
-          {/* TAB 4: GENERAL / SHORTCUTS */}
-          {activeTab === 'general' && (
-            <div className="space-y-6 max-w-2xl mx-auto animate-in fade-in duration-150">
-              {/* Hotkey Section */}
-              <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800">
-                <div className="flex items-center justify-between gap-3 mb-1.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Keyboard className="w-4 h-4 text-indigo-400 shrink-0" />
-                    <h3 className="text-sm font-bold text-slate-100 truncate">Global Shortcuts</h3>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={hotkeySettings.enabled}
-                      onChange={(e) =>
-                        setHotkeySettings((prev) => ({ ...prev, enabled: e.target.checked }))
-                      }
-                      className="sr-only peer"
-                    />
-                    <div className="w-9 h-5 bg-slate-800 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-                  </label>
-                </div>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  System-wide hotkeys allow toggling the application window and switching connection state from anywhere.
-                </p>
-              </div>
-
-              <form onSubmit={handleSaveHotkeys} className="space-y-4">
-                {hotkeyError && (
-                  <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-center gap-2.5 text-xs text-rose-300">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>{hotkeyError}</span>
-                  </div>
-                )}
-
-                {hotkeySaved && (
-                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2.5 text-xs text-emerald-300">
-                    <Check className="w-4 h-4 shrink-0" />
-                    <span>Shortcut settings saved successfully!</span>
-                  </div>
-                )}
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    Toggle Window Shortcut
-                  </label>
-                  <input
-                    type="text"
-                    value={hotkeySettings.toggleWindow}
-                    onChange={(e) =>
-                      setHotkeySettings((prev) => ({ ...prev, toggleWindow: e.target.value }))
-                    }
-                    placeholder="Ctrl+Shift+K"
-                    disabled={!hotkeySettings.enabled}
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950/70 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-100 placeholder-slate-600 text-xs font-mono transition-colors outline-hidden disabled:opacity-50"
-                  />
-                  <p className="text-[11px] text-slate-500">
-                    Shows or hides the Kite application window (e.g. Ctrl+Shift+K or Cmd+Shift+K).
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    Toggle Connection Shortcut
-                  </label>
-                  <input
-                    type="text"
-                    value={hotkeySettings.toggleConnect}
-                    onChange={(e) =>
-                      setHotkeySettings((prev) => ({ ...prev, toggleConnect: e.target.value }))
-                    }
-                    placeholder="Ctrl+Shift+C"
-                    disabled={!hotkeySettings.enabled}
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950/70 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-100 placeholder-slate-600 text-xs font-mono transition-colors outline-hidden disabled:opacity-50"
-                  />
-                  <p className="text-[11px] text-slate-500">
-                    Connects to last active profile or disconnects active VPN session (e.g. Ctrl+Shift+C or Cmd+Shift+C).
-                  </p>
-                </div>
-
-                <div className="flex justify-end pt-1">
-                  <button
-                    type="submit"
-                    disabled={hotkeySaving}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/20 active:scale-95 transition-all cursor-pointer"
-                  >
-                    {hotkeySaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                    <span>Save Shortcuts</span>
-                  </button>
-                </div>
-              </form>
-
-              {/* Interface Preferences */}
-              <div className="pt-4 border-t border-slate-800 space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  Display & Layout
-                </h4>
-                <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-semibold text-slate-200">Compact Profile Cards</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      Display servers in a dense, single-row (~36px) list with quick actions on hover.
-                    </div>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
-                    <input
-                      type="checkbox"
-                      checked={isCompact}
-                      onChange={handleToggleCompact}
-                      className="sr-only peer"
-                    />
-                    <div className="w-9 h-5 bg-slate-800 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-                  </label>
-                </div>
-              </div>
             </div>
           )}
         </div>

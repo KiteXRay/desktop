@@ -31,7 +31,6 @@ import (
 	"github.com/KiteXRay/desktop/internal/bridge"
 	"github.com/KiteXRay/desktop/internal/connlist"
 	"github.com/KiteXRay/desktop/internal/osspecific/clean"
-	"github.com/KiteXRay/desktop/internal/osspecific/hotkey"
 	"github.com/KiteXRay/desktop/internal/osspecific/networkready"
 	"github.com/KiteXRay/desktop/internal/osspecific/proxy"
 	"github.com/KiteXRay/desktop/internal/osspecific/root"
@@ -40,12 +39,6 @@ import (
 	"github.com/KiteXRay/desktop/internal/updater"
 	xray3 "github.com/lilendian0x00/xray-knife/v3/pkg/xray"
 )
-
-type HotkeySettingsDTO struct {
-	Enabled       bool   `json:"enabled"`
-	ToggleWindow  string `json:"toggleWindow"`
-	ToggleConnect string `json:"toggleConnect"`
-}
 
 type ProxyEndpointsDTO struct {
 
@@ -136,7 +129,6 @@ type App struct {
 	windowMu       sync.Mutex
 	windowVisible  bool
 	lastGeom       WindowGeometry
-	hotkeyMgr      hotkey.Manager
 	quitting       atomic.Bool
 }
 
@@ -193,8 +185,6 @@ func (a *App) SetActiveID(id string) {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.windowVisible = true
-	a.hotkeyMgr = hotkey.NewManager()
-	a.setupHotkeys()
 	_ = clean.ClearStuckNetwork()
 	go a.startStatsTicker()
 	a.startSleepWatcher()
@@ -209,9 +199,6 @@ func (a *App) startup(ctx context.Context) {
 
 func (a *App) shutdown(ctx context.Context) {
 	a.quitting.Store(true)
-	if a.hotkeyMgr != nil {
-		_ = a.hotkeyMgr.Close()
-	}
 	if a.sleepWatcher != nil {
 		a.sleepWatcher.Stop()
 	}
@@ -2124,83 +2111,7 @@ func (a *App) HideWindow() {
 	wruntime.WindowHide(a.ctx)
 }
 
-func (a *App) ToggleActiveConnection() {
-	actID := a.ActiveID()
-	if actID != "" {
-		_ = a.Disconnect()
-		return
-	}
-	items := a.items.All()
-	if len(items) == 0 {
-		return
-	}
-	_ = a.Connect(items[0].ID())
-}
 
-func (a *App) GetHotkeySettings() HotkeySettingsDTO {
-	cfg := a.saveFile.GetHotkeyConfig()
-	if cfg == nil {
-		defWin := "Ctrl+Shift+K"
-		defConn := "Ctrl+Shift+C"
-		if runtime.GOOS == "darwin" {
-			defWin = "Cmd+Shift+K"
-			defConn = "Cmd+Shift+C"
-		}
-		return HotkeySettingsDTO{
-			Enabled:       true,
-			ToggleWindow:  defWin,
-			ToggleConnect: defConn,
-		}
-	}
-	return HotkeySettingsDTO{
-		Enabled:       cfg.Enabled,
-		ToggleWindow:  cfg.ToggleWindow,
-		ToggleConnect: cfg.ToggleConnect,
-	}
-}
-
-func (a *App) SetHotkeySettings(settings HotkeySettingsDTO) error {
-	cfg := HotkeyConfig{
-		Enabled:       settings.Enabled,
-		ToggleWindow:  strings.TrimSpace(settings.ToggleWindow),
-		ToggleConnect: strings.TrimSpace(settings.ToggleConnect),
-	}
-	a.saveFile.SetHotkeyConfig(cfg)
-	a.saveFile.SaveWindowAndSettings()
-
-	a.setupHotkeys()
-	return nil
-}
-
-func (a *App) setupHotkeys() {
-	if a.hotkeyMgr == nil {
-		return
-	}
-	a.hotkeyMgr.UnregisterAll()
-
-	cfg := a.saveFile.GetHotkeyConfig()
-	if cfg == nil || !cfg.Enabled {
-		return
-	}
-
-	if cfg.ToggleWindow != "" {
-		err := a.hotkeyMgr.Register(cfg.ToggleWindow, func() {
-			a.ToggleWindow()
-		})
-		if err != nil {
-			slog.Warn("Failed to register toggle window hotkey", "shortcut", cfg.ToggleWindow, "error", err)
-		}
-	}
-
-	if cfg.ToggleConnect != "" {
-		err := a.hotkeyMgr.Register(cfg.ToggleConnect, func() {
-			a.ToggleActiveConnection()
-		})
-		if err != nil {
-			slog.Warn("Failed to register toggle connection hotkey", "shortcut", cfg.ToggleConnect, "error", err)
-		}
-	}
-}
 
 func (a *App) GetCompactMode() bool {
 	return a.saveFile.GetCompactMode()
