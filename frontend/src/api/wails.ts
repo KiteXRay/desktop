@@ -52,6 +52,9 @@ declare global {
           ToggleWindow(): Promise<void>;
           SaveWindowGeometry(): Promise<void>;
           NotifyWindowVisibility(visible: boolean): Promise<void>;
+          ShowWindow(): Promise<void>;
+          HideWindow(): Promise<void>;
+          MinimizeWindow(): Promise<void>;
         };
       };
     };
@@ -62,7 +65,9 @@ declare global {
       BrowserOpenURL(url: string): void;
       WindowMinimise(): void;
       WindowToggleMaximise(): void;
+      WindowHide(): void;
       WindowClose(): void;
+      Quit(): void;
     };
   }
 }
@@ -526,6 +531,32 @@ export const api = {
       return window.runtime.EventsOn('compact_mode:changed', callback);
     }
     return () => {};
+  },
+
+  async minimizeWindow(): Promise<void> {
+    if (window.runtime?.WindowMinimise) {
+      window.runtime.WindowMinimise();
+      return;
+    }
+    const app = getApp() as any;
+    if (app?.MinimizeWindow) {
+      return app.MinimizeWindow();
+    }
+  },
+
+  async closeWindow(): Promise<void> {
+    const app = getApp();
+    if (app?.HideWindow) {
+      return app.HideWindow();
+    }
+    if (window.runtime?.WindowHide) {
+      window.runtime.WindowHide();
+      return;
+    }
+    if (window.runtime?.Quit) {
+      window.runtime.Quit();
+      return;
+    }
   }
 };
 

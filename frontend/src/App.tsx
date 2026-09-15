@@ -26,6 +26,7 @@ import {
   List,
   MoreVertical,
   X,
+  Minus,
 } from 'lucide-react';
 import { api } from './api/wails';
 import type { ConnectionDTO, TunnelMode, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO, Subscription, AppInfoDTO } from './types';
@@ -610,7 +611,10 @@ export function App() {
       )}
 
       {/* Header Bar */}
-      <header className="h-16 px-5 border-b border-slate-800 bg-slate-900/95 flex items-center justify-between shrink-0 relative">
+      <header
+        className="h-16 px-5 border-b border-slate-800 bg-slate-900/95 flex items-center justify-between shrink-0 relative wails-drag"
+        style={{ '--wails-draggable': 'drag' } as React.CSSProperties}
+      >
         {/* Left: Brand, Mode Switcher & Connect / Disconnect */}
         <div className="flex items-center gap-4 min-w-0">
           <div className="flex items-center gap-3 shrink-0">
@@ -750,16 +754,28 @@ export function App() {
             <Info className="w-4 h-4" />
           </button>
 
+          <div className="h-5 w-px bg-slate-800/80 shrink-0 mx-0.5" />
+
           <button
-            onClick={() => api.quit()}
-            className="p-2 rounded-xl bg-slate-900 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 transition-all cursor-pointer"
-            title="Quit Application"
+            onClick={() => api.minimizeWindow()}
+            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-slate-700 transition-all cursor-pointer"
+            title="Minimize"
+            aria-label="Minimize"
           >
-            <LogOut className="w-4 h-4" />
+            <Minus className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => api.closeWindow()}
+            className="p-2 rounded-xl bg-slate-900 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 transition-all cursor-pointer"
+            title="Close"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Mobile Right: ConnectButton - AddProfileButton - MenuButton */}
+        {/* Mobile Right: ConnectButton - AddProfileButton - MenuButton - Window Controls */}
         <div className="flex md:hidden items-center gap-1.5 shrink-0">
           {/* 1. ConnectButton: exact same size w-8 h-8, solid green when active without extra circle */}
           {activeConnection ? (
@@ -812,6 +828,26 @@ export function App() {
             title="Menu"
           >
             {isMobileMenuOpen ? <X className="w-4 h-4" /> : <MoreVertical className="w-4 h-4" />}
+          </button>
+
+          <div className="h-4 w-px bg-slate-800 shrink-0 mx-0.5" />
+
+          <button
+            onClick={() => api.minimizeWindow()}
+            className="w-8 h-8 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-slate-700 flex items-center justify-center transition-all cursor-pointer shrink-0"
+            title="Minimize"
+            aria-label="Minimize"
+          >
+            <Minus className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            onClick={() => api.closeWindow()}
+            className="w-8 h-8 rounded-xl bg-slate-900 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 flex items-center justify-center transition-all cursor-pointer shrink-0"
+            title="Close"
+            aria-label="Close"
+          >
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       </header>

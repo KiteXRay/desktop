@@ -2111,6 +2111,13 @@ func (a *App) HideWindow() {
 	wruntime.WindowHide(a.ctx)
 }
 
+func (a *App) MinimizeWindow() {
+	if a.ctx == nil {
+		return
+	}
+	wruntime.WindowMinimise(a.ctx)
+}
+
 
 
 func (a *App) GetCompactMode() bool {

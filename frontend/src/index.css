@@ -168,3 +168,16 @@ button {
   font-style: italic;
 }
 
+/* Wails frameless window dragging */
+.wails-drag {
+  --wails-draggable: drag;
+}
+
+.wails-no-drag,
+.wails-drag button,
+.wails-drag input,
+.wails-drag a,
+.wails-drag select {
+  --wails-draggable: none;
+}
+

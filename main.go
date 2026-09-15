@@ -20,6 +20,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/KiteXRay/desktop/icon"
@@ -423,11 +424,12 @@ func main() {
 	}()
 
 	err := wails.Run(&options.App{
-		Title:             AppTitleName,
-		Width:             startWidth,
-		Height:            startHeight,
-		MinWidth:          400,
-		MinHeight:         520,
+		Title:     AppTitleName,
+		Width:     startWidth,
+		Height:    startHeight,
+		MinWidth:  400,
+		MinHeight: 520,
+		Frameless: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
@@ -477,6 +479,10 @@ func main() {
 					}
 				}
 			},
+		},
+		// Add this block to kill the fallback borders
+		Windows: &windows.Options{
+			DisableFramelessWindowDecorations: true,
 		},
 		Linux: &linux.Options{
 			Icon:        appIcon,

@@ -348,7 +348,7 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
                       ) : (
                         <RotateCcw className="w-3.5 h-3.5" />
                       )}
-                      <span>Reset TUN Adapter</span>
+                      <span>Reset Adapter</span>
                     </button>
                   )}
 
@@ -358,7 +358,7 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
                     className="flex items-center gap-2 px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold transition-all shadow-md shadow-indigo-600/20 cursor-pointer ml-auto"
                   >
                     {tunnelLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    <span>Save Tunnel Settings</span>
+                    <span>Save Settings</span>
                   </button>
                 </div>
               </form>

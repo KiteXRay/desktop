@@ -72,6 +72,8 @@ export function LaunchAppWithProxy(arg1:string,arg2:string):Promise<void>;
 
 export function LaunchBridgeRule(arg1:string,arg2:string):Promise<void>;
 
+export function MinimizeWindow():Promise<void>;
+
 export function NotifyWindowVisibility(arg1:boolean):Promise<void>;
 
 export function OpenURL(arg1:string):Promise<void>;
