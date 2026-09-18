@@ -140,11 +140,8 @@ jobs:
 
           wails3 task windows:build PRODUCTION=true
 
-          if (Test-Path "build\bin\Kite.exe") {
-            Copy-Item -Force "build\bin\Kite.exe" "build\bin\kite.exe"
-          }
-
-          makensis -DARG_WAILS_AMD64_BINARY="..\..\bin\kite.exe" -DINFO_PRODUCTVERSION="$ver" build\windows\installer\project.nsi
+          $wailsBin = if (Test-Path "build\bin\Kite.exe") { "..\..\bin\Kite.exe" } else { "..\..\bin\kite.exe" }
+          makensis -DARG_WAILS_AMD64_BINARY="$wailsBin" -DINFO_PRODUCTVERSION="$ver" build\windows\installer\project.nsi
           $inst = Get-ChildItem -Path "build\bin" -Filter "*installer.exe" | Select-Object -First 1
           if ($inst) {
             $dest = Join-Path "build\bin" "kite-amd64-installer.exe"
