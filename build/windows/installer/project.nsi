@@ -17,15 +17,21 @@ VIAddVersionKey "FileVersion"     "${INFO_PRODUCTVERSION}"
 VIAddVersionKey "LegalCopyright"  "${INFO_COPYRIGHT}"
 VIAddVersionKey "ProductName"     "${INFO_PRODUCTNAME}"
 
-# Enable HiDPI support.
+# Enable HiDPI support and integrity check
 ManifestDPIAware true
+CRCCheck on
+SetCompressor /SOLID lzma
+BrandingText "Kite"
 
-!include "MUI.nsh"
-
+# Installer & Uninstaller Icons (must be defined before MUI.nsh)
+Icon "..\icon.ico"
+UninstallIcon "..\icon.ico"
 !define MUI_ICON "..\icon.ico"
 !define MUI_UNICON "..\icon.ico"
 !define MUI_FINISHPAGE_NOAUTOCLOSE
 !define MUI_ABORTWARNING
+
+!include "MUI.nsh"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
@@ -57,8 +63,11 @@ Section
     # Include Wintun driver DLL for TUN virtual adapter
     File "..\wintun.dll"
 
-    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
-    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    # Include application icon
+    File "..\icon.ico"
+
+    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\icon.ico"
+    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\icon.ico"
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
@@ -72,6 +81,7 @@ Section "uninstall"
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
 
     Delete "$INSTDIR\wintun.dll"
+    Delete "$INSTDIR\icon.ico"
     RMDir /r $INSTDIR
 
     Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"

@@ -150,12 +150,57 @@ jobs:
             }
           }
 
+      - name: Sign Windows Executable and Installer
+        shell: pwsh
+        env:
+          WINDOWS_SIGN_CERT_BASE64: ${{ secrets.WINDOWS_SIGN_CERT_BASE64 }}
+          WINDOWS_SIGN_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGN_CERT_PASSWORD }}
+        run: |
+          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $signtool) {
+            $signtool = (Get-ChildItem "C:\Program Files\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          }
+          if (-not $signtool) {
+            Write-Warning "signtool.exe not found in Windows Kits. Skipping code signing."
+            exit 0
+          }
+          Write-Host "Using signtool: $signtool"
+
+          $pfxPath = "$env:TEMP\kite_codesign.pfx"
+          $certPassword = ""
+
+          if ($env:WINDOWS_SIGN_CERT_BASE64 -and $env:WINDOWS_SIGN_CERT_PASSWORD) {
+            Write-Host "Using repository Windows code-signing certificate secret."
+            [System.IO.File]::WriteAllBytes($pfxPath, [System.Convert]::FromBase64String($env:WINDOWS_SIGN_CERT_BASE64))
+            $certPassword = $env:WINDOWS_SIGN_CERT_PASSWORD
+          } else {
+            Write-Host "No commercial code-signing certificate secret set. Generating dedicated Kite Authenticode certificate..."
+            $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Kite, O=Kite, C=US" -KeyUsage DigitalSignature -FriendlyName "Kite VPN Client" -CertStoreLocation "Cert:\CurrentUser\My" -NotAfter (Get-Date).AddYears(5)
+            $certPassword = "KitePassword123"
+            $securePwd = ConvertTo-SecureString -String $certPassword -Force -AsPlainText
+            Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $securePwd | Out-Null
+            Export-Certificate -Cert $cert -FilePath "build\bin\kite-publisher.cer" | Out-Null
+            Write-Host "Exported build\bin\kite-publisher.cer for user trust."
+          }
+
+          $targets = @("build\bin\Kite.exe", "build\bin\kite.exe", "build\bin\kite-amd64-installer.exe")
+          foreach ($file in $targets) {
+            if (Test-Path $file) {
+              Write-Host "Signing $file with Authenticode..."
+              & "$signtool" sign /f "$pfxPath" /p "$certPassword" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "$file"
+              if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Timestamping failed or timed out. Signing without timestamp fallback..."
+                & "$signtool" sign /f "$pfxPath" /p "$certPassword" /fd SHA256 "$file"
+              }
+            }
+          }
+
       - name: Clean Stale Windows Assets
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for asset in Kite-amd64-installer.exe kite-windows-amd64.zip; do
+          for asset in Kite-amd64-installer.exe kite-windows-amd64.zip kite-publisher.cer; do
             gh release delete-asset "$GITHUB_REF_NAME" "$asset" -y 2>/dev/null || true
           done
 
@@ -165,6 +210,7 @@ jobs:
         with:
           files: |
             build/bin/kite-amd64-installer.exe
+            build/bin/kite-publisher.cer
 
   release-macos:
     name: Build macOS (universal)

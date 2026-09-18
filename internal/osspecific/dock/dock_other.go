@@ -1,4 +1,4 @@
-//go:build (!linux && !darwin) || !cgo
+//go:build (!linux && !darwin && !windows) || (!cgo && !windows)
 
 package dock
 
