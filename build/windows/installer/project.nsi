@@ -30,6 +30,8 @@ UninstallIcon "..\icon.ico"
 !define MUI_UNICON "..\icon.ico"
 !define MUI_FINISHPAGE_NOAUTOCLOSE
 !define MUI_ABORTWARNING
+!define MUI_FINISHPAGE_RUN "$INSTDIR\${PRODUCT_EXECUTABLE}"
+!define MUI_FINISHPAGE_RUN_TEXT "Launch ${INFO_PRODUCTNAME}"
 
 !include "MUI.nsh"
 
@@ -83,6 +85,10 @@ Section "uninstall"
     Delete "$INSTDIR\wintun.dll"
     Delete "$INSTDIR\icon.ico"
     RMDir /r $INSTDIR
+
+    # Clean up scheduled autostart task and registry run key
+    ExecWait 'schtasks.exe /Delete /TN "KiteAutostart" /F'
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${INFO_PRODUCTNAME}"
 
     Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"
     Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"

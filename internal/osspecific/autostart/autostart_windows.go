@@ -4,7 +4,9 @@ package autostart
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
+	"syscall"
 
 	"golang.org/x/sys/windows/registry"
 )
@@ -12,10 +14,16 @@ import (
 const (
 	runKeyPath = `Software\Microsoft\Windows\CurrentVersion\Run`
 	appName    = "Kite"
+	taskName   = "KiteAutostart"
 )
 
-// IsEnabled returns true if Kite is configured in Windows Run registry key.
-func IsEnabled() bool {
+func isTaskEnabled() bool {
+	cmd := exec.Command("schtasks.exe", "/Query", "/TN", taskName)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return cmd.Run() == nil
+}
+
+func isRegistryEnabled() bool {
 	k, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.QUERY_VALUE)
 	if err != nil {
 		return false
@@ -26,18 +34,24 @@ func IsEnabled() bool {
 	return err == nil && strings.TrimSpace(val) != ""
 }
 
-// SetEnabled enables or disables autostart in Windows Run registry key.
-func SetEnabled(enabled bool) error {
-	k, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE)
-	if err != nil {
-		return fmt.Errorf("open registry run key: %w", err)
-	}
-	defer k.Close()
+// IsEnabled returns true if Kite is configured in Task Scheduler or Windows Run registry key.
+func IsEnabled() bool {
+	return isTaskEnabled() || isRegistryEnabled()
+}
 
+// SetEnabled enables or disables autostart via Windows Task Scheduler (elevated) and Run registry key.
+func SetEnabled(enabled bool) error {
 	if !enabled {
-		err := k.DeleteValue(appName)
-		if err != nil && err != registry.ErrNotExist {
-			return fmt.Errorf("delete registry value: %w", err)
+		// 1. Remove from Task Scheduler
+		delCmd := exec.Command("schtasks.exe", "/Delete", "/TN", taskName, "/F")
+		delCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		_ = delCmd.Run()
+
+		// 2. Remove from Registry
+		k, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE)
+		if err == nil {
+			_ = k.DeleteValue(appName)
+			k.Close()
 		}
 		return nil
 	}
@@ -47,9 +61,21 @@ func SetEnabled(enabled bool) error {
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
-	cmd := fmt.Sprintf(`"%s" --autostart`, exePath)
-	if err := k.SetStringValue(appName, cmd); err != nil {
-		return fmt.Errorf("set registry value: %w", err)
+	// 1. Task Scheduler with HighestAvailable (required because Kite requires Administrator privileges)
+	taskCmd := fmt.Sprintf(`"%s" --autostart`, exePath)
+	schedCmd := exec.Command("schtasks.exe", "/Create", "/TN", taskName, "/TR", taskCmd, "/SC", "ONLOGON", "/RL", "HIGHEST", "/F")
+	schedCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	schedErr := schedCmd.Run()
+
+	// 2. Also register in HKCU Run key as secondary fallback
+	k, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE)
+	if err == nil {
+		_ = k.SetStringValue(appName, taskCmd)
+		k.Close()
+	}
+
+	if schedErr != nil && err != nil {
+		return fmt.Errorf("failed to configure autostart in task scheduler (%v) and registry (%v)", schedErr, err)
 	}
 
 	return nil

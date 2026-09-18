@@ -3,6 +3,7 @@ package autostart
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -17,8 +18,21 @@ func resolveExecutable() (string, error) {
 	if err != nil {
 		return os.Executable()
 	}
-	if strings.Contains(exe, "/tmp/") || strings.Contains(exe, "\\Temp\\") {
+	if strings.Contains(exe, "/tmp/") || strings.Contains(exe, "\\Temp\\") || strings.Contains(exe, "\\temp\\") {
 		// Fallback to standard install paths if running in temp
+		if runtime.GOOS == "windows" {
+			progFiles := os.Getenv("ProgramFiles")
+			if progFiles != "" {
+				cand := filepath.Join(progFiles, "Kite", "Kite.exe")
+				if _, err := os.Stat(cand); err == nil {
+					return cand, nil
+				}
+				cand2 := filepath.Join(progFiles, "Kite", "kite.exe")
+				if _, err := os.Stat(cand2); err == nil {
+					return cand2, nil
+				}
+			}
+		}
 		if _, err := os.Stat("/opt/kite/kite"); err == nil {
 			return "/opt/kite/kite", nil
 		}

@@ -2137,9 +2137,15 @@ func (a *App) GetGeneralSettings() GeneralSettingsDTO {
 	osAutostart := autostart.IsEnabled()
 	savedAutostart := a.saveFile.GetRunOnStartup()
 	if osAutostart != savedAutostart {
-		a.saveFile.SetRunOnStartup(osAutostart)
-		a.saveFile.SaveWindowAndSettings()
-		savedAutostart = osAutostart
+		if savedAutostart {
+			// User has autostart enabled in saved settings; re-sync to OS (e.g. after update/reinstall)
+			_ = autostart.SetEnabled(true)
+			osAutostart = autostart.IsEnabled()
+		} else {
+			a.saveFile.SetRunOnStartup(osAutostart)
+			a.saveFile.SaveWindowAndSettings()
+			savedAutostart = osAutostart
+		}
 	}
 
 	return GeneralSettingsDTO{
