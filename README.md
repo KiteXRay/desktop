@@ -72,10 +72,7 @@ It delivers seamless, low-overhead system-wide tunneling, system proxying, and g
 
 1. Download the installer setup executable (`kite-amd64-installer.exe`) from [Releases](https://github.com/KiteXRay/desktop/releases).
 2. Run the installer and follow setup steps.
-   > **Windows SmartScreen note**: If SmartScreen prompts with "Windows protected your PC" (common for new open-source releases), click **More info** → **Run anyway**. You can also permanently trust the Kite publisher certificate by downloading `kite-publisher.cer` from the release and running:
-   > ```cmd
-   > certutil -addstore -f "TrustedPublisher" kite-publisher.cer
-   > ```
+   > **Windows SmartScreen note**: If SmartScreen prompts with "Windows protected your PC" (common for new open-source releases), click **More info** → **Run anyway**.
 3. Launch Kite (requests administrator privileges on startup for Wintun device setup).
 
 ### Linux

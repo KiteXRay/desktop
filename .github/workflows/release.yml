@@ -210,7 +210,6 @@ jobs:
         with:
           files: |
             build/bin/kite-amd64-installer.exe
-            build/bin/kite-publisher.cer
 
   release-macos:
     name: Build macOS (universal)
