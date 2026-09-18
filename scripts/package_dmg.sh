@@ -38,8 +38,30 @@ else
 fi
 
 if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
-    echo "Error: Could not find Kite.app in ${BIN_DIR}." >&2
-    echo "Please build the application first (e.g., 'wails build -platform darwin/universal')." >&2
+    if [ -f "${BIN_DIR}/Kite" ] || [ -f "${BIN_DIR}/kite" ]; then
+        echo "==> Assembling macOS Kite.app bundle structure..."
+        APP_PATH="${BIN_DIR}/Kite.app"
+        mkdir -p "${APP_PATH}/Contents/MacOS" "${APP_PATH}/Contents/Resources"
+        if [ -f "${BIN_DIR}/Kite" ]; then
+            cp -f "${BIN_DIR}/Kite" "${APP_PATH}/Contents/MacOS/Kite"
+        else
+            cp -f "${BIN_DIR}/kite" "${APP_PATH}/Contents/MacOS/Kite"
+        fi
+        chmod 755 "${APP_PATH}/Contents/MacOS/Kite"
+        if [ -f "${ROOT_DIR}/build/darwin/Info.plist" ]; then
+            sed -e "s/{{.Info.ProductName}}/Kite/g" \
+                -e "s/{{.OutputFilename}}/Kite/g" \
+                -e "s/{{.Info.ProductVersion}}/${VERSION}/g" \
+                -e "s/{{.Info.Comments}}/Desktop VPN Client for Kite/g" \
+                -e "s/{{.Info.Copyright}}/Copyright (c) 2026 Kite/g" \
+                "${ROOT_DIR}/build/darwin/Info.plist" > "${APP_PATH}/Contents/Info.plist"
+        fi
+    fi
+fi
+
+if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+    echo "Error: Could not find or build Kite.app in ${BIN_DIR}." >&2
+    echo "Please build the application first (e.g., 'wails3 task darwin:build')." >&2
     exit 1
 fi
 

@@ -37,24 +37,32 @@ APP_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
 echo "==> Cross-compiling for Windows (x64) with Wails (v${APP_VERSION})..."
 export CC=x86_64-w64-mingw32-gcc
 export CXX=x86_64-w64-mingw32-g++
-wails_bin="$HOME/go/bin/wails"
-if [ ! -f "$wails_bin" ]; then
-    wails_bin="wails"
+wails_bin="$(command -v wails3 || command -v "$HOME/go/bin/wails3" || echo "wails3")"
+
+if command -v "$wails_bin" >/dev/null 2>&1; then
+    "$wails_bin" task windows:build ARCH=amd64 PRODUCTION=true
+elif command -v task >/dev/null 2>&1; then
+    task windows:build ARCH=amd64 PRODUCTION=true
+else
+    wails3 task windows:build ARCH=amd64 PRODUCTION=true
 fi
 
-BUILD_ARGS=(-platform windows/amd64 -o kite.exe -ldflags "-X main.appVersion=${APP_VERSION}")
+# Ensure both kite.exe and Kite.exe exist
+if [ -f build/bin/Kite.exe ] && [ ! -f build/bin/kite.exe ]; then
+    cp -f build/bin/Kite.exe build/bin/kite.exe
+elif [ -f build/bin/kite.exe ] && [ ! -f build/bin/Kite.exe ]; then
+    cp -f build/bin/kite.exe build/bin/Kite.exe
+fi
+
+# NSIS Packaging if makensis available or requested
 if command -v makensis >/dev/null 2>&1; then
-    echo "==> makensis detected: will bundle Windows NSIS Installer..."
-    BUILD_ARGS+=(-nsis)
+    echo "==> makensis detected: bundling Windows NSIS Installer..."
+    if [ -f build/windows/installer/project.nsi ]; then
+        makensis -DARG_WAILS_AMD64_BINARY="..\..\bin\kite.exe" -DINFO_PRODUCTVERSION="${APP_VERSION}" build/windows/installer/project.nsi || true
+    fi
 elif [ "$1" = "--installer" ] || [ "$1" = "-nsis" ]; then
-    echo "==> Building with -nsis flag..."
-    BUILD_ARGS+=(-nsis)
+    echo "==> makensis requested but not found in PATH." >&2
 fi
-
-"$wails_bin" build "${BUILD_ARGS[@]}"
 
 echo "==> Build successful! Windows output located in build/bin/:"
-ls -lh build/bin/kite.exe build/bin/wintun.dll
-if [ -f build/bin/*installer.exe ]; then
-    ls -lh build/bin/*installer.exe
-fi
+ls -lh build/bin/*.exe build/bin/wintun.dll 2>/dev/null || true

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://wails.io/schemas/config.v2.json",
+  "$schema": "https://wails.io/schemas/config.v3.json",
   "name": "Kite",
   "outputfilename": "Kite",
   "frontend:install": "npm install",
@@ -13,7 +13,7 @@
   "info": {
     "companyName": "Kite",
     "productName": "Kite",
-    "productVersion": "1.4.2",
+    "productVersion": "1.5.0",
     "copyright": "Copyright 2026 Kite",
     "comments": "Fast & Minimal Desktop VPN Client"
   }

@@ -59,6 +59,11 @@ export interface TunnelSettingsDTO {
   dns: string;
 }
 
+export interface GeneralSettingsDTO {
+  runOnStartup: boolean;
+  autoConnectOnStartup: boolean;
+}
+
 export interface Subscription {
   id: string;
   subId?: string;

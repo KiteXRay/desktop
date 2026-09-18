@@ -31,20 +31,22 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libgtk-4-dev libwebkitgtk-6.0-dev libx11-dev
 
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.22
 
       - name: Build Application
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.4.0"; fi
           ./scripts/set_version.sh "${VERSION}"
-          wails build -tags webkit2_41 -skipbindings -ldflags "-X main.appVersion=${VERSION}"
+          wails3 task linux:build PRODUCTION=true
           go build -ldflags "-s -w" -o build/bin/kite-tunnel ./cmd/kite-tunnel
           if [ -f build/bin/Kite ] && [ ! -f build/bin/kite ]; then
             cp build/bin/Kite build/bin/kite
+          elif [ -f build/bin/kite ] && [ ! -f build/bin/Kite ]; then
+            cp build/bin/kite build/bin/Kite
           fi
 
       - name: Package Release Archive
@@ -102,7 +104,7 @@ jobs:
           node-version: '24'
 
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.22
 
       - name: Install NSIS
         shell: pwsh
@@ -126,7 +128,23 @@ jobs:
           $ver = "${env:GITHUB_REF_NAME}".TrimStart("v")
           if (-not $ver -or $ver -eq "main") { $ver = "1.4.0" }
           bash ./scripts/set_version.sh "$ver"
-          wails build -platform windows/amd64 -nsis -skipbindings -ldflags "-X main.appVersion=$ver"
+
+          # Ensure Wintun driver is present
+          if (-not (Test-Path "build\windows\wintun.dll")) {
+            Invoke-WebRequest -Uri "https://www.wintun.net/builds/wintun-0.14.1.zip" -OutFile "$env:TEMP\wintun.zip"
+            Expand-Archive -Path "$env:TEMP\wintun.zip" -DestinationPath "$env:TEMP\wintun" -Force
+            Copy-Item "$env:TEMP\wintun\wintun\bin\amd64\wintun.dll" "build\windows\wintun.dll" -Force
+          }
+          New-Item -ItemType Directory -Force -Path "build\bin"
+          Copy-Item "build\windows\wintun.dll" "build\bin\wintun.dll" -Force
+
+          wails3 task windows:build PRODUCTION=true
+
+          if (Test-Path "build\bin\Kite.exe") {
+            Copy-Item -Force "build\bin\Kite.exe" "build\bin\kite.exe"
+          }
+
+          makensis -DARG_WAILS_AMD64_BINARY="..\..\bin\kite.exe" -DINFO_PRODUCTVERSION="$ver" build\windows\installer\project.nsi
           $inst = Get-ChildItem -Path "build\bin" -Filter "*installer.exe" | Select-Object -First 1
           if ($inst) {
             $dest = Join-Path "build\bin" "kite-amd64-installer.exe"
@@ -170,7 +188,7 @@ jobs:
           node-version: '24'
 
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.22
 
       - name: Generate Native macOS ICNS Icons
         run: |
@@ -195,7 +213,10 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then VERSION="1.4.0"; fi
           ./scripts/set_version.sh "${VERSION}"
-          wails build -platform darwin/universal -skipbindings -ldflags "-X main.appVersion=${VERSION}"
+          wails3 task darwin:build ARCH=amd64 OUTPUT=build/bin/Kite-amd64 PRODUCTION=true
+          wails3 task darwin:build ARCH=arm64 OUTPUT=build/bin/Kite-arm64 PRODUCTION=true
+          lipo -create -output build/bin/Kite build/bin/Kite-amd64 build/bin/Kite-arm64
+          rm -f build/bin/Kite-amd64 build/bin/Kite-arm64
           CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w" -o build/bin/kite-tunnel-amd64 ./cmd/kite-tunnel
           CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w" -o build/bin/kite-tunnel-arm64 ./cmd/kite-tunnel
           lipo -create -output build/bin/kite-tunnel build/bin/kite-tunnel-amd64 build/bin/kite-tunnel-arm64

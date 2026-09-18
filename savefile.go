@@ -52,27 +52,33 @@ type AppConfigFile struct {
 	TunnelDNS      string                      `json:"tunnelDns,omitempty"`
 	Window         *WindowGeometry             `json:"window,omitempty"`
 	Hotkey         *HotkeyConfig               `json:"hotkey,omitempty"`
-	CompactMode    bool                        `json:"compactMode,omitempty"`
-	Subscriptions  []subscription.Subscription `json:"subscriptions,omitempty"`
-	BridgeGroups   []bridge.BridgeGroup        `json:"bridgeGroups,omitempty"`
-	BridgeRules    []bridge.BridgeRule         `json:"bridgeRules,omitempty"`
-	Connections    []SavedState                `json:"connections"`
+	CompactMode          bool                        `json:"compactMode,omitempty"`
+	RunOnStartup         bool                        `json:"runOnStartup,omitempty"`
+	AutoConnectOnStartup bool                        `json:"autoConnectOnStartup,omitempty"`
+	LastConnectedID      string                      `json:"lastConnectedId,omitempty"`
+	Subscriptions        []subscription.Subscription `json:"subscriptions,omitempty"`
+	BridgeGroups         []bridge.BridgeGroup        `json:"bridgeGroups,omitempty"`
+	BridgeRules          []bridge.BridgeRule         `json:"bridgeRules,omitempty"`
+	Connections          []SavedState                `json:"connections"`
 }
 
 type SaveFile struct {
-	filePath       string
-	altPath        string
-	tunnelMode     string
-	tunnelDeviceIP string
-	tunnelDNS      string
-	window         *WindowGeometry
-	hotkey         *HotkeyConfig
-	compactMode    bool
-	subscriptions  []subscription.Subscription
-	bridgeGroups   []bridge.BridgeGroup
-	bridgeRules    []bridge.BridgeRule
-	lastSavedItems []SavedState
-	mu             sync.Mutex
+	filePath             string
+	altPath              string
+	tunnelMode           string
+	tunnelDeviceIP       string
+	tunnelDNS            string
+	window               *WindowGeometry
+	hotkey               *HotkeyConfig
+	compactMode          bool
+	runOnStartup         bool
+	autoConnectOnStartup bool
+	lastConnectedID      string
+	subscriptions        []subscription.Subscription
+	bridgeGroups         []bridge.BridgeGroup
+	bridgeRules          []bridge.BridgeRule
+	lastSavedItems       []SavedState
+	mu                   sync.Mutex
 }
 
 func serialize(item *connlist.Item) SavedState {
@@ -334,6 +340,42 @@ func (s *SaveFile) SetCompactMode(compact bool) {
 	s.compactMode = compact
 }
 
+func (s *SaveFile) GetRunOnStartup() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.runOnStartup
+}
+
+func (s *SaveFile) SetRunOnStartup(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.runOnStartup = enabled
+}
+
+func (s *SaveFile) GetAutoConnect() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.autoConnectOnStartup
+}
+
+func (s *SaveFile) SetAutoConnect(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.autoConnectOnStartup = enabled
+}
+
+func (s *SaveFile) GetLastConnectedID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastConnectedID
+}
+
+func (s *SaveFile) SetLastConnectedID(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastConnectedID = strings.TrimSpace(id)
+}
+
 // SaveWindowAndSettings persists window geometry and current settings without requiring list reload.
 func (s *SaveFile) SaveWindowAndSettings() {
 	s.mu.Lock()
@@ -358,8 +400,11 @@ func (s *SaveFile) SaveWindowAndSettings() {
 		TunnelDNS:      dns,
 		Window:         s.window,
 		Hotkey:         s.hotkey,
-		CompactMode:    s.compactMode,
-		Subscriptions:  s.subscriptions,
+		CompactMode:          s.compactMode,
+		RunOnStartup:         s.runOnStartup,
+		AutoConnectOnStartup: s.autoConnectOnStartup,
+		LastConnectedID:      s.lastConnectedID,
+		Subscriptions:        s.subscriptions,
 		BridgeGroups:   s.bridgeGroups,
 		BridgeRules:    s.bridgeRules,
 		Connections:    s.lastSavedItems,
@@ -415,8 +460,11 @@ func (s *SaveFile) Update(list *connlist.Collection) {
 		TunnelDNS:      dns,
 		Window:         s.window,
 		Hotkey:         s.hotkey,
-		CompactMode:    s.compactMode,
-		Subscriptions:  s.subscriptions,
+		CompactMode:          s.compactMode,
+		RunOnStartup:         s.runOnStartup,
+		AutoConnectOnStartup: s.autoConnectOnStartup,
+		LastConnectedID:      s.lastConnectedID,
+		Subscriptions:        s.subscriptions,
 		BridgeGroups:   s.bridgeGroups,
 		BridgeRules:    s.bridgeRules,
 		Connections:    toSave,
@@ -559,6 +607,9 @@ func (s *SaveFile) Load(list *connlist.Collection) {
 			s.hotkey = appCfg.Hotkey
 		}
 		s.compactMode = appCfg.CompactMode
+		s.runOnStartup = appCfg.RunOnStartup
+		s.autoConnectOnStartup = appCfg.AutoConnectOnStartup
+		s.lastConnectedID = appCfg.LastConnectedID
 		s.lastSavedItems = appCfg.Connections
 		s.mu.Unlock()
 

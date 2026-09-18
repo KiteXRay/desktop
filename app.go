@@ -18,18 +18,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/energye/systray"
 	"github.com/jackpal/gateway"
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 	tproxy "github.com/xjasonlyu/tun2socks/v2/proxy"
 	socks5proxy "golang.org/x/net/proxy"
 
-	"github.com/goxray/core/awg"
-	"github.com/goxray/core/client"
-	"github.com/goxray/core/wireguard"
 	"github.com/KiteXRay/desktop/internal/appscan"
 	"github.com/KiteXRay/desktop/internal/bridge"
 	"github.com/KiteXRay/desktop/internal/connlist"
+	"github.com/KiteXRay/desktop/internal/osspecific/autostart"
 	"github.com/KiteXRay/desktop/internal/osspecific/clean"
 	"github.com/KiteXRay/desktop/internal/osspecific/networkready"
 	"github.com/KiteXRay/desktop/internal/osspecific/proxy"
@@ -37,11 +34,13 @@ import (
 	"github.com/KiteXRay/desktop/internal/sleepwatch"
 	"github.com/KiteXRay/desktop/internal/subscription"
 	"github.com/KiteXRay/desktop/internal/updater"
+	"github.com/goxray/core/awg"
+	"github.com/goxray/core/client"
+	"github.com/goxray/core/wireguard"
 	xray3 "github.com/lilendian0x00/xray-knife/v3/pkg/xray"
 )
 
 type ProxyEndpointsDTO struct {
-
 	Socks5Host string `json:"socks5Host"`
 	Socks5Port int    `json:"socks5Port"`
 	HTTPHost   string `json:"httpHost"`
@@ -55,23 +54,28 @@ type TunnelSettingsDTO struct {
 	DNS      string `json:"dns"`
 }
 
+type GeneralSettingsDTO struct {
+	RunOnStartup         bool `json:"runOnStartup"`
+	AutoConnectOnStartup bool `json:"autoConnectOnStartup"`
+}
+
 type ConnectionDTO struct {
 	ID             string            `json:"id"`
 	SubscriptionID string            `json:"subscriptionId,omitempty"`
 	Label          string            `json:"label"`
 	Link           string            `json:"link"`
-	Active       bool              `json:"active"`
-	Address      string            `json:"address"`
-	Port         string            `json:"port"`
-	Protocol     string            `json:"protocol"`
-	TLS          string            `json:"tls"`
-	Flow         string            `json:"flow"`
-	Network      string            `json:"network"`
-	Security     string            `json:"security"`
-	ConfigMap    map[string]string `json:"configMap"`
-	BytesRead    int64             `json:"bytesRead"`
-	BytesWritten int64             `json:"bytesWritten"`
-	TotalBytes   int64             `json:"totalBytes"`
+	Active         bool              `json:"active"`
+	Address        string            `json:"address"`
+	Port           string            `json:"port"`
+	Protocol       string            `json:"protocol"`
+	TLS            string            `json:"tls"`
+	Flow           string            `json:"flow"`
+	Network        string            `json:"network"`
+	Security       string            `json:"security"`
+	ConfigMap      map[string]string `json:"configMap"`
+	BytesRead      int64             `json:"bytesRead"`
+	BytesWritten   int64             `json:"bytesWritten"`
+	TotalBytes     int64             `json:"totalBytes"`
 }
 
 type StatsDTO struct {
@@ -162,9 +166,7 @@ func NewApp() *App {
 		if app.onTrayUpdate != nil {
 			app.onTrayUpdate()
 		}
-		if app.ctx != nil {
-			wruntime.EventsEmit(app.ctx, "connections:changed", app.GetConnections())
-		}
+		app.emit("connections:changed", app.GetConnections())
 	})
 
 	return app
@@ -182,17 +184,46 @@ func (a *App) SetActiveID(id string) {
 	a.activeID = id
 }
 
+func (a *App) emit(event string, data any) {
+	if app := application.Get(); app != nil && app.Event != nil {
+		app.Event.Emit(event, data)
+	}
+}
+
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	a.windowVisible = true
 	_ = clean.ClearStuckNetwork()
 	go a.startStatsTicker()
 	a.startSleepWatcher()
 	go a.startHealthWatchdog()
 
+	if a.saveFile.GetRunOnStartup() {
+		_ = autostart.SetEnabled(true)
+	}
+
+	if a.saveFile.GetAutoConnect() {
+		go func() {
+			time.Sleep(1 * time.Second)
+			if a.ActiveID() != "" {
+				return
+			}
+			targetID := a.saveFile.GetLastConnectedID()
+			if targetID != "" && a.items.FindByID(targetID) != nil {
+				slog.Info("Autoconnecting on startup to last profile", "id", targetID)
+				_ = a.Connect(targetID)
+				return
+			}
+			allItems := a.items.All()
+			if len(allItems) > 0 && allItems[0] != nil {
+				slog.Info("Autoconnecting on startup to first profile", "id", allItems[0].ID())
+				_ = a.Connect(allItems[0].ID())
+			}
+		}()
+	}
+
 	// Automatically update all subscriptions in the background on startup
 	go func() {
-		time.Sleep(2 * time.Second)
+		time.Sleep(10 * time.Second)
 		a.UpdateAllSubscriptions()
 	}()
 }
@@ -229,10 +260,8 @@ func (a *App) startStatsTicker() {
 
 			actID := a.ActiveID()
 			if actID != "" {
-				if a.ctx != nil {
-					stats := a.GetStats(actID)
-					wruntime.EventsEmit(a.ctx, "stats:tick", stats)
-				}
+				stats := a.GetStats(actID)
+				a.emit("stats:tick", stats)
 				flushTicks++
 				if flushTicks >= 15 {
 					flushTicks = 0
@@ -242,7 +271,6 @@ func (a *App) startStatsTicker() {
 		}
 	}
 }
-
 
 func (a *App) GetConnections() []ConnectionDTO {
 	allItems := a.items.All()
@@ -258,18 +286,18 @@ func (a *App) GetConnections() []ConnectionDTO {
 			SubscriptionID: item.SubscriptionID(),
 			Label:          item.Label(),
 			Link:           item.Link(),
-			Active:       item.Active() || (activeID != "" && activeID == item.ID()),
-			Address:      cfg["Address"],
-			Port:         cfg["Port"],
-			Protocol:     cfg["Protocol"],
-			TLS:          cfg["TLS"],
-			Flow:         cfg["Flow"],
-			Network:      cfg["Network"],
-			Security:     cfg["Security"],
-			ConfigMap:    cfg,
-			BytesRead:    bytesRead,
-			BytesWritten: bytesWritten,
-			TotalBytes:   bytesRead + bytesWritten,
+			Active:         item.Active() || (activeID != "" && activeID == item.ID()),
+			Address:        cfg["Address"],
+			Port:           cfg["Port"],
+			Protocol:       cfg["Protocol"],
+			TLS:            cfg["TLS"],
+			Flow:           cfg["Flow"],
+			Network:        cfg["Network"],
+			Security:       cfg["Security"],
+			ConfigMap:      cfg,
+			BytesRead:      bytesRead,
+			BytesWritten:   bytesWritten,
+			TotalBytes:     bytesRead + bytesWritten,
 		}
 	}
 
@@ -421,18 +449,16 @@ func (a *App) Connect(id string) error {
 				errMsg = fmt.Sprintf("Missing network privileges (%s). Run: %s", err.Error(), fixCmd)
 			}
 			slog.Error("cannot connect due to missing network privileges", "error", err, "command", fixCmd)
-			if a.ctx != nil {
-				wruntime.EventsEmit(a.ctx, "network:privileges_required", map[string]any{
-					"error":   errMsg,
-					"command": fixCmd,
-				})
-				wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
-					"status":  "error",
-					"id":      id,
-					"error":   errMsg,
-					"command": fixCmd,
-				})
-			}
+			a.emit("network:privileges_required", map[string]any{
+				"error":   errMsg,
+				"command": fixCmd,
+			})
+			a.emit("connection:status", map[string]any{
+				"status":  "error",
+				"id":      id,
+				"error":   errMsg,
+				"command": fixCmd,
+			})
 			return errors.New(errMsg)
 		}
 	}
@@ -485,13 +511,11 @@ func (a *App) connectInternal(id string) error {
 		if a.onTrayUpdate != nil {
 			a.onTrayUpdate()
 		}
-		if a.ctx != nil {
-			wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
-				"status": "error",
-				"id":     id,
-				"error":  err.Error(),
-			})
-		}
+		a.emit("connection:status", map[string]any{
+			"status": "error",
+			"id":     id,
+			"error":  err.Error(),
+		})
 		return err
 	}
 
@@ -509,15 +533,16 @@ func (a *App) connectInternal(id string) error {
 	if a.onTrayUpdate != nil {
 		a.onTrayUpdate()
 	}
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "connections:changed", a.GetConnections())
-		wruntime.EventsEmit(a.ctx, "proxy:status", a.systemProxyOn)
-		wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
-			"status": "connected",
-			"id":     id,
-			"mode":   a.GetTunnelMode(),
-		})
-	}
+	a.saveFile.SetLastConnectedID(id)
+	a.saveFile.SaveWindowAndSettings()
+
+	a.emit("connections:changed", a.GetConnections())
+	a.emit("proxy:status", a.systemProxyOn)
+	a.emit("connection:status", map[string]any{
+		"status": "connected",
+		"id":     id,
+		"mode":   a.GetTunnelMode(),
+	})
 
 	go func() {
 		time.Sleep(150 * time.Millisecond)
@@ -557,13 +582,11 @@ func (a *App) Disconnect() error {
 	if a.onTrayUpdate != nil {
 		a.onTrayUpdate()
 	}
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "connections:changed", a.GetConnections())
-		wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
-			"status": "disconnected",
-			"id":     prevID,
-		})
-	}
+	a.emit("connections:changed", a.GetConnections())
+	a.emit("connection:status", map[string]any{
+		"status": "disconnected",
+		"id":     prevID,
+	})
 
 	return nil
 }
@@ -585,12 +608,10 @@ func (a *App) ClearStuckTun() error {
 	if a.onTrayUpdate != nil {
 		a.onTrayUpdate()
 	}
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
-			"status": "disconnected",
-		})
-		wruntime.EventsEmit(a.ctx, "connections:changed", a.GetConnections())
-	}
+	a.emit("connection:status", map[string]any{
+		"status": "disconnected",
+	})
+	a.emit("connections:changed", a.GetConnections())
 
 	return err
 }
@@ -611,7 +632,6 @@ func (a *App) Quit() {
 		go func() {
 			_ = a.Disconnect()
 			_ = clean.ClearStuckNetwork()
-			systray.Quit()
 			close(done)
 		}()
 
@@ -622,8 +642,8 @@ func (a *App) Quit() {
 			slog.Warn("Cleanup timed out, forcing exit")
 		}
 
-		if a.ctx != nil {
-			wruntime.Quit(a.ctx)
+		if app := application.Get(); app != nil {
+			app.Quit()
 		}
 		time.Sleep(50 * time.Millisecond)
 		os.Exit(0)
@@ -674,7 +694,7 @@ func (a *App) ResetTraffic(id string) error {
 	return nil
 }
 
-var appVersion = "1.4.2"
+var appVersion = "1.5.0"
 
 func (a *App) GetAppInfo() AppInfoDTO {
 	return AppInfoDTO{
@@ -718,16 +738,17 @@ func (a *App) GrantNetworkPrivileges() (bool, error) {
 }
 
 func (a *App) OpenURL(targetURL string) {
-	if a.ctx != nil {
-		wruntime.BrowserOpenURL(a.ctx, targetURL)
+	if app := application.Get(); app != nil && app.Browser != nil {
+		_ = app.Browser.OpenURL(targetURL)
 	}
 }
 
 func (a *App) GetClipboardText() (string, error) {
-	if a.ctx == nil {
-		return "", errors.New("app context not ready")
+	if app := application.Get(); app != nil && app.Clipboard != nil {
+		text, _ := app.Clipboard.Text()
+		return text, nil
 	}
-	return wruntime.ClipboardGetText(a.ctx)
+	return "", nil
 }
 
 func pingRoutedConnection(link string, timeout time.Duration) (latency int64) {
@@ -973,9 +994,7 @@ func (a *App) PingConnection(id string) int64 {
 	if item == nil {
 		return -1
 	}
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "ping:start", id)
-	}
+	a.emit("ping:start", id)
 
 	var res int64
 	if item.Active() {
@@ -984,12 +1003,10 @@ func (a *App) PingConnection(id string) int64 {
 		res = pingRoutedConnection(item.Link(), 2500*time.Millisecond)
 	}
 
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "ping:result", PingResultDTO{
-			ID:     id,
-			PingMs: res,
-		})
-	}
+	a.emit("ping:result", PingResultDTO{
+		ID:     id,
+		PingMs: res,
+	})
 	return res
 }
 
@@ -1007,9 +1024,7 @@ func (a *App) PingAll() map[string]int64 {
 		id := itm.ID()
 		link := itm.Link()
 
-		if a.ctx != nil {
-			wruntime.EventsEmit(a.ctx, "ping:start", id)
-		}
+		a.emit("ping:start", id)
 
 		var latency int64
 		if itm.Active() {
@@ -1019,12 +1034,10 @@ func (a *App) PingAll() map[string]int64 {
 		}
 		results[id] = latency
 
-		if a.ctx != nil {
-			wruntime.EventsEmit(a.ctx, "ping:result", PingResultDTO{
-				ID:     id,
-				PingMs: latency,
-			})
-		}
+		a.emit("ping:result", PingResultDTO{
+			ID:     id,
+			PingMs: latency,
+		})
 	}
 
 	return results
@@ -1081,9 +1094,7 @@ func (a *App) InstallUpdate(assetURL, releaseURL string) error {
 
 		// If assetURL is not a downloadable file (or is the release webpage), open browser
 		if strings.HasPrefix(assetURL, "https://github.com/") && strings.Contains(assetURL, "/releases/tag/") {
-			if a.ctx != nil {
-				wruntime.BrowserOpenURL(a.ctx, releaseURL)
-			}
+			a.OpenURL(releaseURL)
 			return
 		}
 
@@ -1097,15 +1108,13 @@ func (a *App) InstallUpdate(assetURL, releaseURL string) error {
 		destPath = filepath.Join(os.TempDir(), fmt.Sprintf("kite_%d_%s", time.Now().Unix(), baseName))
 
 		emitProgress := func(status string, pct float64, downloaded, total int64, errMsg string) {
-			if a.ctx != nil {
-				wruntime.EventsEmit(a.ctx, "update:progress", map[string]any{
-					"status":     status,
-					"percentage": pct,
-					"downloaded": downloaded,
-					"total":      total,
-					"error":      errMsg,
-				})
-			}
+			a.emit("update:progress", map[string]any{
+				"status":     status,
+				"percentage": pct,
+				"downloaded": downloaded,
+				"total":      total,
+				"error":      errMsg,
+			})
 		}
 
 		emitProgress("downloading", 0, 0, 0, "")
@@ -1338,18 +1347,16 @@ func (a *App) SetTunnelMode(mode string) error {
 					if a.onTrayUpdate != nil {
 						a.onTrayUpdate()
 					}
-					if a.ctx != nil {
-						wruntime.EventsEmit(a.ctx, "network:privileges_required", map[string]any{
-							"error":   errMsg,
-							"command": fixCmd,
-						})
-						wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
-							"status":  "error",
-							"id":      activeID,
-							"error":   errMsg,
-							"command": fixCmd,
-						})
-					}
+					a.emit("network:privileges_required", map[string]any{
+						"error":   errMsg,
+						"command": fixCmd,
+					})
+					a.emit("connection:status", map[string]any{
+						"status":  "error",
+						"id":      activeID,
+						"error":   errMsg,
+						"command": fixCmd,
+					})
 					return errors.New(errMsg)
 				}
 			}
@@ -1366,13 +1373,11 @@ func (a *App) SetTunnelMode(mode string) error {
 				if a.onTrayUpdate != nil {
 					a.onTrayUpdate()
 				}
-				if a.ctx != nil {
-					wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
-						"status": "error",
-						"id":     activeID,
-						"error":  err.Error(),
-					})
-				}
+				a.emit("connection:status", map[string]any{
+					"status": "error",
+					"id":     activeID,
+					"error":  err.Error(),
+				})
 				return err
 			}
 			item.SetActive(true)
@@ -1385,15 +1390,13 @@ func (a *App) SetTunnelMode(mode string) error {
 				a.systemProxyOn = false
 			}
 
-			if a.ctx != nil {
-				wruntime.EventsEmit(a.ctx, "connections:changed", a.GetConnections())
-				wruntime.EventsEmit(a.ctx, "proxy:status", a.systemProxyOn)
-				wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
-					"status": "connected",
-					"id":     activeID,
-					"mode":   a.GetTunnelMode(),
-				})
-			}
+			a.emit("connections:changed", a.GetConnections())
+			a.emit("proxy:status", a.systemProxyOn)
+			a.emit("connection:status", map[string]any{
+				"status": "connected",
+				"id":     activeID,
+				"mode":   a.GetTunnelMode(),
+			})
 			go func() {
 				time.Sleep(150 * time.Millisecond)
 				a.PingConnection(activeID)
@@ -1404,10 +1407,8 @@ func (a *App) SetTunnelMode(mode string) error {
 		a.systemProxyOn = false
 	}
 
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "proxy:status", a.systemProxyOn)
-		wruntime.EventsEmit(a.ctx, "mode:changed", mode)
-	}
+	a.emit("proxy:status", a.systemProxyOn)
+	a.emit("mode:changed", mode)
 
 	if a.onTrayUpdate != nil {
 		a.onTrayUpdate()
@@ -1432,9 +1433,7 @@ func (a *App) SetSystemProxy(enabled bool) error {
 	if err == nil {
 		a.systemProxyOn = enabled
 	}
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "proxy:status", a.systemProxyOn)
-	}
+	a.emit("proxy:status", a.systemProxyOn)
 	return err
 }
 
@@ -1451,26 +1450,16 @@ func (a *App) GetInstalledApps() ([]appscan.AppInfo, error) {
 }
 
 func (a *App) SelectExecutableDialog() (string, error) {
-	if a.ctx == nil {
-		return "", fmt.Errorf("app context not ready")
+	app := application.Get()
+	if app == nil || app.Dialog == nil {
+		return "", fmt.Errorf("dialog service not ready")
 	}
 
-	filters := []wruntime.FileFilter{}
+	dialog := app.Dialog.OpenFile().SetTitle("Select Application Executable to Tunnel")
 	if runtime.GOOS == "windows" {
-		filters = append(filters, wruntime.FileFilter{
-			DisplayName: "Executable Files (*.exe, *.bat, *.cmd)",
-			Pattern:     "*.exe;*.bat;*.cmd",
-		})
+		dialog.AddFilter("Executable Files (*.exe, *.bat, *.cmd)", "*.exe;*.bat;*.cmd")
 	}
-
-	file, err := wruntime.OpenFileDialog(a.ctx, wruntime.OpenDialogOptions{
-		Title:   "Select Application Executable to Tunnel",
-		Filters: filters,
-	})
-	if err != nil {
-		return "", err
-	}
-	return file, nil
+	return dialog.PromptForSingleSelection()
 }
 
 func (a *App) LaunchAndRouteApp(connectionID string, exePath string) error {
@@ -1521,14 +1510,12 @@ func (a *App) handleSystemWakeUp() {
 	slog.Info("System woke up from sleep: restoring active VPN connection", "id", activeID)
 
 	// 1. Notify frontend immediately
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
-			"status":  "reconnecting",
-			"id":      activeID,
-			"mode":    a.GetTunnelMode(),
-			"message": "Waking from sleep: Reconnecting secure VPN...",
-		})
-	}
+	a.emit("connection:status", map[string]any{
+		"status":  "reconnecting",
+		"id":      activeID,
+		"mode":    a.GetTunnelMode(),
+		"message": "Waking from sleep: Reconnecting secure VPN...",
+	})
 
 	// 2. CRITICAL: Disconnect stale session & clean routing tables FIRST!
 	// This unmounts tun0 and removes 0.0.0.0/1 so host networking and DNS work normally.
@@ -1602,13 +1589,11 @@ func (a *App) handleSystemWakeUp() {
 	if a.onTrayUpdate != nil {
 		a.onTrayUpdate()
 	}
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "connection:status", map[string]any{
-			"status": "error",
-			"id":     activeID,
-			"error":  fmt.Sprintf("Failed to auto-reconnect after sleep: %v", lastErr),
-		})
-	}
+	a.emit("connection:status", map[string]any{
+		"status": "error",
+		"id":     activeID,
+		"error":  fmt.Sprintf("Failed to auto-reconnect after sleep: %v", lastErr),
+	})
 }
 
 func (a *App) startHealthWatchdog() {
@@ -1699,12 +1684,10 @@ func (a *App) SetTunnelSettings(deviceIP, dns string) error {
 	curDevIP, curDNS := a.saveFile.GetTunnelSettings()
 	a.items.SetTunnelSettings(curDevIP, curDNS)
 	a.saveFile.Update(a.items)
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "tunnel:settings_changed", TunnelSettingsDTO{
-			DeviceIP: curDevIP,
-			DNS:      curDNS,
-		})
-	}
+	a.emit("tunnel:settings_changed", TunnelSettingsDTO{
+		DeviceIP: curDevIP,
+		DNS:      curDNS,
+	})
 	return nil
 }
 
@@ -1767,9 +1750,7 @@ func (a *App) AddConnectionOrSubscription(input, label string) (map[string]any, 
 		}
 
 		a.saveFile.Update(a.items)
-		if a.ctx != nil {
-			wruntime.EventsEmit(a.ctx, "connections:changed", a.GetConnections())
-		}
+		a.emit("connections:changed", a.GetConnections())
 
 		return map[string]any{
 			"type":        "subscription",
@@ -1848,12 +1829,21 @@ func (a *App) UpdateSubscription(id string) error {
 		}
 		if i < len(existing) {
 			item := existing[i]
-			if item.ID() == activeID {
-				wasActive = true
-				activeItem = item
-				_ = a.Disconnect()
+			if item.Link() == link && item.Label() == lbl {
+				continue
 			}
-			_ = item.Update(link, lbl)
+			if item.ID() == activeID {
+				if item.Link() != link {
+					wasActive = true
+					activeItem = item
+					_ = a.Disconnect()
+					_ = item.Update(link, lbl)
+				} else if item.Label() != lbl {
+					item.SetLabel(lbl)
+				}
+			} else {
+				_ = item.Update(link, lbl)
+			}
 		} else {
 			_ = a.items.AddItemWithSubscription("", lbl, link, id, 0, 0)
 		}
@@ -1876,9 +1866,7 @@ func (a *App) UpdateSubscription(id string) error {
 	}
 
 	a.saveFile.Update(a.items)
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "connections:changed", a.GetConnections())
-	}
+	a.emit("connections:changed", a.GetConnections())
 	return nil
 }
 
@@ -1911,9 +1899,7 @@ func (a *App) DeleteSubscription(id string) error {
 	}
 
 	a.saveFile.Update(a.items)
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "connections:changed", a.GetConnections())
-	}
+	a.emit("connections:changed", a.GetConnections())
 	return nil
 }
 
@@ -1933,9 +1919,7 @@ func (a *App) GetBridgeGroups() []bridge.BridgeGroup {
 func (a *App) SaveBridgeGroups(groups []bridge.BridgeGroup) error {
 	a.saveFile.SetBridgeGroups(groups)
 	a.saveFile.Update(a.items)
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "bridge:groups_changed", groups)
-	}
+	a.emit("bridge:groups_changed", groups)
 	return nil
 }
 
@@ -1946,9 +1930,7 @@ func (a *App) GetBridgeRules() []bridge.BridgeRule {
 func (a *App) SaveBridgeRules(rules []bridge.BridgeRule) error {
 	a.saveFile.SetBridgeRules(rules)
 	a.saveFile.Update(a.items)
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "bridge:rules_changed", rules)
-	}
+	a.emit("bridge:rules_changed", rules)
 	return nil
 }
 
@@ -1979,7 +1961,7 @@ func (a *App) LaunchBridgeRule(ruleID string, exePath string) error {
 }
 
 func (a *App) SaveWindowGeometry() {
-	if a.ctx == nil || a.quitting.Load() {
+	if a.quitting.Load() {
 		return
 	}
 	a.windowMu.Lock()
@@ -1989,15 +1971,24 @@ func (a *App) SaveWindowGeometry() {
 	}
 	a.windowMu.Unlock()
 
-	if wruntime.WindowIsMinimised(a.ctx) {
+	app := application.Get()
+	if app == nil {
 		return
 	}
-	w, h := wruntime.WindowGetSize(a.ctx)
+	win, ok := app.Window.GetByName("main")
+	if !ok || win == nil {
+		return
+	}
+
+	if win.IsMinimised() {
+		return
+	}
+	w, h := win.Size()
 	if w < 400 || h < 500 {
 		return
 	}
-	isMax := wruntime.WindowIsMaximised(a.ctx)
-	x, y := wruntime.WindowGetPosition(a.ctx)
+	isMax := win.IsMaximised()
+	x, y := win.Position()
 
 	geom := a.saveFile.GetWindowGeometry()
 	if geom == nil {
@@ -2016,7 +2007,7 @@ func (a *App) SaveWindowGeometry() {
 }
 
 func (a *App) checkWindowGeometryChanged() {
-	if a.ctx == nil || a.quitting.Load() {
+	if a.quitting.Load() {
 		return
 	}
 	a.windowMu.Lock()
@@ -2026,15 +2017,24 @@ func (a *App) checkWindowGeometryChanged() {
 	}
 	a.windowMu.Unlock()
 
-	if wruntime.WindowIsMinimised(a.ctx) {
+	app := application.Get()
+	if app == nil {
 		return
 	}
-	w, h := wruntime.WindowGetSize(a.ctx)
+	win, ok := app.Window.GetByName("main")
+	if !ok || win == nil {
+		return
+	}
+
+	if win.IsMinimised() {
+		return
+	}
+	w, h := win.Size()
 	if w < 400 || h < 500 {
 		return
 	}
-	isMax := wruntime.WindowIsMaximised(a.ctx)
-	x, y := wruntime.WindowGetPosition(a.ctx)
+	isMax := win.IsMaximised()
+	x, y := win.Position()
 
 	a.windowMu.Lock()
 	changed := false
@@ -2062,10 +2062,15 @@ func (a *App) checkWindowGeometryChanged() {
 }
 
 func (a *App) ToggleWindow() {
-	if a.ctx == nil {
+	app := application.Get()
+	if app == nil {
 		return
 	}
-	if wruntime.WindowIsMinimised(a.ctx) {
+	win, ok := app.Window.GetByName("main")
+	if !ok || win == nil {
+		return
+	}
+	if win.IsMinimised() {
 		a.ShowWindow()
 		return
 	}
@@ -2090,28 +2095,33 @@ func (a *App) NotifyWindowVisibility(visible bool) {
 }
 
 func (a *App) ShowWindow() {
-	if a.ctx == nil {
-		return
-	}
 	a.windowMu.Lock()
 	a.windowVisible = true
 	a.windowMu.Unlock()
-	wruntime.WindowShow(a.ctx)
-	wruntime.WindowUnminimise(a.ctx)
+
+	app := application.Get()
+	if app != nil {
+		if win, ok := app.Window.GetByName("main"); ok {
+			win.Show()
+			win.UnMinimise()
+			win.Focus()
+		}
+	}
 }
 
 func (a *App) HideWindow() {
-	if a.ctx == nil {
-		return
-	}
 	a.SaveWindowGeometry()
 	a.windowMu.Lock()
 	a.windowVisible = false
 	a.windowMu.Unlock()
-	wruntime.WindowHide(a.ctx)
+
+	app := application.Get()
+	if app != nil {
+		if win, ok := app.Window.GetByName("main"); ok {
+			win.Hide()
+		}
+	}
 }
-
-
 
 func (a *App) GetCompactMode() bool {
 	return a.saveFile.GetCompactMode()
@@ -2120,9 +2130,39 @@ func (a *App) GetCompactMode() bool {
 func (a *App) SetCompactMode(compact bool) {
 	a.saveFile.SetCompactMode(compact)
 	a.saveFile.SaveWindowAndSettings()
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "compact_mode:changed", compact)
+	a.emit("compact_mode:changed", compact)
+}
+
+func (a *App) GetGeneralSettings() GeneralSettingsDTO {
+	osAutostart := autostart.IsEnabled()
+	savedAutostart := a.saveFile.GetRunOnStartup()
+	if osAutostart != savedAutostart {
+		a.saveFile.SetRunOnStartup(osAutostart)
+		a.saveFile.SaveWindowAndSettings()
+		savedAutostart = osAutostart
+	}
+
+	return GeneralSettingsDTO{
+		RunOnStartup:         savedAutostart,
+		AutoConnectOnStartup: a.saveFile.GetAutoConnect(),
 	}
 }
 
+func (a *App) SetRunOnStartup(enabled bool) error {
+	if err := autostart.SetEnabled(enabled); err != nil {
+		slog.Error("failed to configure system autostart", "enabled", enabled, "error", err)
+		return err
+	}
+	a.saveFile.SetRunOnStartup(enabled)
+	a.saveFile.SaveWindowAndSettings()
+	a.emit("settings:general_changed", a.GetGeneralSettings())
+	return nil
+}
+
+func (a *App) SetAutoConnectOnStartup(enabled bool) error {
+	a.saveFile.SetAutoConnect(enabled)
+	a.saveFile.SaveWindowAndSettings()
+	a.emit("settings:general_changed", a.GetGeneralSettings())
+	return nil
+}
 

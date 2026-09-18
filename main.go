@@ -13,14 +13,9 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
-	"github.com/energye/systray"
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/linux"
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"github.com/KiteXRay/desktop/icon"
 	"github.com/KiteXRay/desktop/internal/osspecific/dock"
@@ -34,6 +29,12 @@ var assets embed.FS
 var appIcon []byte
 
 const AppTitleName = "Kite"
+
+func init() {
+	if runtime.GOOS == "linux" && os.Getenv("GDK_BACKEND") == "" {
+		_ = os.Setenv("GDK_BACKEND", "x11")
+	}
+}
 
 func ensureDesktopFileLinux() {
 	if runtime.GOOS != "linux" {
@@ -192,48 +193,28 @@ func initialize() {
 }
 
 type TrayController struct {
-	app        *App
-	mDisconn   *systray.MenuItem
-	mOpen      *systray.MenuItem
-	mQuit      *systray.MenuItem
-	mMode      *systray.MenuItem
-	mModeItems map[string]*systray.MenuItem
-	mu         sync.Mutex
-	stopTray   func()
+	app  *App
+	tray *application.SystemTray
+	mu   sync.Mutex
 }
 
 func (tc *TrayController) updateMenu() {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 
-	systray.ResetMenu()
+	menu := application.NewMenu()
 
-	mHeader := systray.AddMenuItem(AppTitleName, "Kite")
-	mHeader.Disable()
-	systray.AddSeparator()
-
-	tc.mOpen = systray.AddMenuItem("Open Kite", "Show main application window")
-	tc.mOpen.Click(func() {
-		go func() {
-			tc.app.ShowWindow()
-		}()
-	})
-
-	systray.AddSeparator()
-
-	tc.mMode = systray.AddMenuItem("Mode", "Switch routing mode")
-	tc.mModeItems = make(map[string]*systray.MenuItem)
+	mMode := menu.AddSubmenu("Mode")
 	currentMode := tc.app.GetTunnelMode()
 
 	type modeOption struct {
-		mode    string
-		label   string
-		tooltip string
+		mode  string
+		label string
 	}
 	modes := []modeOption{
-		{mode: "tunnel", label: "Tunnel", tooltip: "System Tunnel (TUN)"},
-		{mode: "proxy", label: "Proxy", tooltip: "System Proxy"},
-		{mode: "bridge", label: "Bridge", tooltip: "Bridge (Split Tunneling)"},
+		{mode: "tunnel", label: "Tunnel"},
+		{mode: "proxy", label: "Proxy"},
+		{mode: "bridge", label: "Bridge"},
 	}
 
 	for _, opt := range modes {
@@ -245,21 +226,20 @@ func (tc *TrayController) updateMenu() {
 		} else {
 			title = "○ " + title
 		}
-		item := tc.mMode.AddSubMenuItemCheckbox(title, opt.tooltip, isActive)
-		tc.mModeItems[targetMode] = item
-		item.Click(func() {
+		item := mMode.AddCheckbox(title, isActive)
+		item.OnClick(func(ctx *application.Context) {
 			tc.switchMode(targetMode)
 		})
 	}
-	systray.AddSeparator()
+	menu.AddSeparator()
 
 	conns := tc.app.GetConnections()
 	actID := tc.app.ActiveID()
 
 	var activeLabel string
 	if len(conns) == 0 {
-		mEmpty := systray.AddMenuItem("No Connections", "")
-		mEmpty.Disable()
+		mEmpty := menu.Add("No Connections")
+		mEmpty.SetEnabled(false)
 	} else {
 		for i, conn := range conns {
 			connID := conn.ID
@@ -274,8 +254,8 @@ func (tc *TrayController) updateMenu() {
 			} else {
 				title = "○ " + title
 			}
-			item := systray.AddMenuItemCheckbox(title, conn.Link, isActive)
-			item.Click(func() {
+			item := menu.AddCheckbox(title, isActive)
+			item.OnClick(func(ctx *application.Context) {
 				go func() {
 					if tc.app.ActiveID() == connID {
 						_ = tc.app.Disconnect()
@@ -287,37 +267,37 @@ func (tc *TrayController) updateMenu() {
 		}
 	}
 
-	systray.AddSeparator()
+	menu.AddSeparator()
 
-	tc.mDisconn = systray.AddMenuItem("Disconnect", "Disconnect active VPN")
+	mDisconn := menu.Add("Disconnect")
 	if actID == "" {
-		tc.mDisconn.Disable()
+		mDisconn.SetEnabled(false)
 	}
-	tc.mDisconn.Click(func() {
+	mDisconn.OnClick(func(ctx *application.Context) {
 		go func() {
 			_ = tc.app.Disconnect()
 		}()
 	})
 
-	systray.AddSeparator()
+	menu.AddSeparator()
 
-	tc.mQuit = systray.AddMenuItem("Quit", "Quit application")
-	tc.mQuit.Click(func() {
+	mQuit := menu.Add("Quit")
+	mQuit.OnClick(func(ctx *application.Context) {
 		go func() {
 			tc.app.Quit()
 		}()
 	})
 
 	if actID != "" {
-		systray.SetIcon(icon.LogoActive)
+		tc.tray.SetIcon(icon.LogoActive)
 		if activeLabel != "" {
-			systray.SetTooltip(fmt.Sprintf("%s - %s", AppTitleName, activeLabel))
+			tc.tray.SetTooltip(fmt.Sprintf("%s - %s", AppTitleName, activeLabel))
 		}
 	} else {
-		systray.SetIcon(icon.LogoPassive)
-		systray.SetTooltip(AppTitleName)
+		tc.tray.SetIcon(icon.LogoPassive)
+		tc.tray.SetTooltip(AppTitleName)
 	}
-	systray.CreateMenu()
+	tc.tray.SetMenu(menu)
 }
 
 func (tc *TrayController) switchMode(targetMode string) {
@@ -326,58 +306,24 @@ func (tc *TrayController) switchMode(targetMode string) {
 	}()
 }
 
-func setupSystray(app *App) *TrayController {
+func setupSystray(wailsApp *application.App, app *App) *TrayController {
+	tray := wailsApp.SystemTray.New()
+	tray.SetTooltip(AppTitleName)
+	tray.SetIcon(icon.LogoPassive)
+	dock.HideIconInDock()
+
+	if runtime.GOOS != "darwin" {
+		tray.OnClick(func() {
+			app.ShowWindow()
+		})
+	}
+
 	tc := &TrayController{
-		app: app,
+		app:  app,
+		tray: tray,
 	}
 
-	onReady := func() {
-		systray.SetTooltip(AppTitleName)
-		systray.SetIcon(icon.LogoPassive)
-		dock.HideIconInDock()
-
-		// Left click on tray icon restores/focuses window (Windows/Linux).
-		// On macOS, NSStatusItem displays its dropdown menu natively on click;
-		// registering SetOnClick/SetOnRClick intercepts clicks and suppresses menu display.
-		if runtime.GOOS != "darwin" {
-			systray.SetOnClick(func(menu systray.IMenu) {
-				app.ShowWindow()
-			})
-
-			systray.SetOnRClick(func(menu systray.IMenu) {
-				if menu != nil {
-					_ = menu.ShowMenu()
-				}
-			})
-		}
-
-		tc.updateMenu()
-		systray.CreateMenu()
-	}
-
-	onExit := func() {
-		_ = app.Disconnect()
-	}
-
-	if runtime.GOOS == "windows" {
-		go func() {
-			runtime.LockOSThread()
-			systray.Run(onReady, onExit)
-		}()
-		tc.stopTray = func() {
-			systray.Quit()
-		}
-	} else if runtime.GOOS == "darwin" {
-		_, end := systray.RunWithExternalLoop(onReady, onExit)
-		dock.SafeStartSystray()
-		tc.stopTray = end
-	} else {
-		dock.SaveAppDelegate()
-		start, end := systray.RunWithExternalLoop(onReady, onExit)
-		start()
-		dock.RestoreAppDelegate()
-		tc.stopTray = end
-	}
+	tc.updateMenu()
 
 	app.onTrayUpdate = func() {
 		tc.updateMenu()
@@ -393,7 +339,6 @@ func main() {
 	initialize()
 
 	app := NewApp()
-	var tc *TrayController
 
 	geom := app.saveFile.GetWindowGeometry()
 	startWidth := 1024
@@ -415,78 +360,89 @@ func main() {
 		os.Exit(1)
 	}()
 
-	defer func() {
-		_ = app.Disconnect()
-		if tc != nil && tc.stopTray != nil {
-			tc.stopTray()
-		}
-	}()
+	var tc *TrayController
 
-	err := wails.Run(&options.App{
-		Title:             AppTitleName,
-		Width:             startWidth,
-		Height:            startHeight,
-		MinWidth:          400,
-		MinHeight:         520,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
+	wailsApp := application.New(application.Options{
+		Name:        AppTitleName,
+		Description: "Fast & Minimal Desktop VPN Client",
+		Icon:        appIcon,
+		Assets: application.AssetOptions{
+			Handler: application.BundledAssetFileServer(assets),
 		},
-		BackgroundColour: &options.RGBA{R: 2, G: 6, B: 23, A: 1}, // Slate-950
-		OnStartup: func(ctx context.Context) {
-			tc = setupSystray(app)
-			dock.SetWindowIconFromPNG(appIcon)
-			app.startup(ctx)
-			if geom != nil && geom.Maximized {
-				wruntime.WindowMaximise(ctx)
-			} else {
-				wruntime.Show(ctx)
-				wruntime.WindowShow(ctx)
-				wruntime.WindowUnminimise(ctx)
-				if geom != nil && geom.HasPosition {
-					wruntime.WindowSetPosition(ctx, geom.X, geom.Y)
-					go func() {
-						time.Sleep(60 * time.Millisecond)
-						wruntime.WindowSetPosition(ctx, geom.X, geom.Y)
-					}()
-				}
-			}
+		Linux: application.LinuxOptions{
+			ProgramName:                   "kite",
+			DisableQuitOnLastWindowClosed: true,
 		},
-		OnShutdown: func(ctx context.Context) {
-			if tc != nil && tc.stopTray != nil {
-				tc.stopTray()
-			}
-			app.shutdown(ctx)
+		Services: []application.Service{
+			application.NewService(app),
 		},
-
-		HideWindowOnClose: true,
-		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId: "e8b62569-8c9b-4f8a-9d45-7b034e5d4761",
-			OnSecondInstanceLaunch: func(secondInstanceData options.SecondInstanceData) {
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "e8b62569-8c9b-4f8a-9d45-7b034e5d4761",
+			OnSecondInstanceLaunch: func(secondInstanceData application.SecondInstanceData) {
 				slog.Info("Second instance launched, focusing window", "args", secondInstanceData.Args)
-				if app.ctx != nil {
-					wruntime.Show(app.ctx)
-					wruntime.WindowShow(app.ctx)
-					wruntime.WindowUnminimise(app.ctx)
+				app.ShowWindow()
 
-					for _, arg := range secondInstanceData.Args {
-						arg = strings.TrimSpace(arg)
-						if strings.HasPrefix(arg, "vless://") || strings.HasPrefix(arg, "vmess://") ||
-							strings.HasPrefix(arg, "trojan://") || strings.HasPrefix(arg, "ss://") {
-							_, _ = app.AddConnection("", arg)
-						}
+				for _, arg := range secondInstanceData.Args {
+					arg = strings.TrimSpace(arg)
+					if strings.HasPrefix(arg, "vless://") || strings.HasPrefix(arg, "vmess://") ||
+						strings.HasPrefix(arg, "trojan://") || strings.HasPrefix(arg, "ss://") {
+						_, _ = app.AddConnection("", arg)
 					}
 				}
 			},
 		},
-		Linux: &linux.Options{
-			Icon:        appIcon,
-			ProgramName: "kite",
-		},
-		Bind: []interface{}{
-			app,
+		OnShutdown: func() {
+			if tc != nil && tc.tray != nil {
+				tc.tray.Destroy()
+			}
+			app.shutdown(context.Background())
 		},
 	})
 
+	isAutostart := false
+	for _, arg := range os.Args[1:] {
+		if arg == "--autostart" || arg == "-autostart" {
+			isAutostart = true
+			break
+		}
+	}
+
+	winOpts := application.WebviewWindowOptions{
+		Name:             "main",
+		Title:            AppTitleName,
+		Width:            startWidth,
+		Height:           startHeight,
+		MinWidth:         400,
+		MinHeight:        520,
+		URL:              "/",
+		BackgroundColour: application.RGBA{Red: 2, Green: 6, Blue: 23, Alpha: 255}, // Slate-950
+		Hidden:           isAutostart,
+	}
+
+	if geom != nil && geom.Maximized {
+		winOpts.StartState = application.WindowStateMaximised
+	} else if geom != nil && geom.HasPosition {
+		winOpts.X = geom.X
+		winOpts.Y = geom.Y
+		winOpts.InitialPosition = application.WindowXY
+	}
+
+	win := wailsApp.Window.NewWithOptions(winOpts)
+	if isAutostart {
+		app.windowVisible = false
+		win.Hide()
+	}
+
+	win.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		e.Cancel()
+		win.Hide()
+	})
+
+	tc = setupSystray(wailsApp, app)
+	dock.SetWindowIconFromPNG(appIcon)
+	app.startup(context.Background())
+
+	err := wailsApp.Run()
 	if err != nil {
 		slog.Error("error running wails application", "error", err)
 	}

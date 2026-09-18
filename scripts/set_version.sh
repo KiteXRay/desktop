@@ -64,6 +64,16 @@ if os.path.isfile(wails_file):
         json.dump(wails_data, f, indent=2)
         f.write("\n")
 
+# 2b. Update build/config.yml (Wails v3)
+config_file = os.path.join(root_dir, "build", "config.yml")
+if os.path.isfile(config_file):
+    with open(config_file, "r", encoding="utf-8") as f:
+        config_content = f.read()
+    new_config = re.sub(r'(^[ \t]+version:\s*["\']?)[^"\'\r\n]+(["\']?)', f'\\g<1>{version}\\g<2>', config_content, flags=re.MULTILINE)
+    if new_config != config_content:
+        with open(config_file, "w", encoding="utf-8") as f:
+            f.write(new_config)
+
 # 3. Update build/windows/info.json
 win_info_file = os.path.join(root_dir, "build", "windows", "info.json")
 if os.path.isfile(win_info_file):

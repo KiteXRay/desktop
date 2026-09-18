@@ -218,6 +218,15 @@ func (c *Item) Label() string {
 	return c.label
 }
 
+func (c *Item) SetLabel(label string) {
+	c.mu.Lock()
+	c.label = label
+	c.mu.Unlock()
+	if c.parent != nil {
+		c.parent.onChange()
+	}
+}
+
 func (c *Item) Link() string {
 	return c.link
 }

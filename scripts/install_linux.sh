@@ -12,18 +12,26 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd || echo "$SCRIPT_DIR")"
 
 # Locate kite binary
 KITE_BIN=""
-if [ -f "$SCRIPT_DIR/kite" ]; then
+if [ -f "$SCRIPT_DIR/Kite" ]; then
+    KITE_BIN="$SCRIPT_DIR/Kite"
+elif [ -f "$SCRIPT_DIR/kite" ]; then
     KITE_BIN="$SCRIPT_DIR/kite"
+elif [ -f "$SCRIPT_DIR/build/bin/Kite" ]; then
+    KITE_BIN="$SCRIPT_DIR/build/bin/Kite"
 elif [ -f "$SCRIPT_DIR/build/bin/kite" ]; then
     KITE_BIN="$SCRIPT_DIR/build/bin/kite"
+elif [ -f "$ROOT_DIR/build/bin/Kite" ]; then
+    KITE_BIN="$ROOT_DIR/build/bin/Kite"
 elif [ -f "$ROOT_DIR/build/bin/kite" ]; then
     KITE_BIN="$ROOT_DIR/build/bin/kite"
+elif [ -f "./Kite" ]; then
+    KITE_BIN="$(pwd)/Kite"
 elif [ -f "./kite" ]; then
     KITE_BIN="$(pwd)/kite"
 fi
 
 if [ -z "$KITE_BIN" ]; then
-    echo "Error: 'kite' executable not found in $SCRIPT_DIR or $ROOT_DIR/build/bin." >&2
+    echo "Error: 'Kite' executable not found in $SCRIPT_DIR or $ROOT_DIR/build/bin." >&2
     exit 1
 fi
 

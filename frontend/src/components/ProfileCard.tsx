@@ -106,12 +106,6 @@ export const ProfileCard: React.FC<ProfileCardProps> = React.memo(({
                 {protocol}
               </span>
             )}
-
-            {connection.subscriptionId && (
-              <span className="inline-flex items-center justify-center px-1 py-0.5 text-[8px] font-normal tracking-wider rounded uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0 leading-none" title="Subscription profile">
-                Sub
-              </span>
-            )}
           </div>
 
           {/* Right: Traffic, Actions, Ping, Connect */}
@@ -223,11 +217,6 @@ export const ProfileCard: React.FC<ProfileCardProps> = React.memo(({
                 <h3 className="text-xs font-semibold text-slate-100 truncate" title={label}>
                   {label}
                 </h3>
-                {connection.subscriptionId && (
-                  <span className="inline-flex items-center justify-center px-1 py-0.5 text-[8px] font-normal tracking-wider rounded uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0 leading-none" title="Subscription profile">
-                    Sub
-                  </span>
-                )}
               </div>
             </div>
 

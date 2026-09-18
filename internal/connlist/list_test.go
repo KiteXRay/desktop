@@ -109,3 +109,19 @@ func TestList_AddWireguard(t *testing.T) {
 	require.Equal(t, "1420", cfg["Mtu"])
 }
 
+func TestItem_SetLabel(t *testing.T) {
+	c := New()
+	onChangeCalled := false
+	c.OnChange(func() {
+		onChangeCalled = true
+	})
+
+	require.NoError(t, c.AddItem("Old Label", sampleVlessLink))
+	item := c.All()[0]
+	require.Equal(t, "Old Label", item.Label())
+
+	onChangeCalled = false
+	item.SetLabel("New Label")
+	require.Equal(t, "New Label", item.Label())
+	require.True(t, onChangeCalled)
+}

@@ -27,5 +27,13 @@ echo "==> Synchronizing project version..."
 "${SCRIPT_DIR}/set_version.sh" "${APP_VERSION:-${AppVersion:-}}"
 APP_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
 
-wails build -platform darwin/universal -ldflags "-X main.appVersion=${APP_VERSION}" "$@"
+WAILS_BIN="$(command -v wails3 || command -v "$HOME/go/bin/wails3" || echo "wails3")"
+if command -v "$WAILS_BIN" >/dev/null 2>&1; then
+    "$WAILS_BIN" task darwin:build PRODUCTION=true
+elif command -v task >/dev/null 2>&1; then
+    task darwin:build PRODUCTION=true
+else
+    wails3 task darwin:build PRODUCTION=true
+fi
+
 "${SCRIPT_DIR}/package_dmg.sh" "${APP_VERSION}" "universal"

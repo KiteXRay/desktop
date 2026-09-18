@@ -136,9 +136,3 @@ func resizeImage(src image.Image, w, h int) image.Image {
 	}
 	return dst
 }
-
-func SaveAppDelegate() {}
-
-func RestoreAppDelegate() {}
-
-func SafeStartSystray() {}

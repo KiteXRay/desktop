@@ -92,7 +92,7 @@ export const AboutView: React.FC<AboutViewProps> = ({
             </span>
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            v{appInfo?.version || '1.4.2'} • {appInfo?.os || 'linux'}/{appInfo?.arch || 'amd64'}
+            v{appInfo?.version || '1.5.0'} • {appInfo?.os || 'linux'}/{appInfo?.arch || 'amd64'}
           </p>
         </div>
         <p className="text-sm text-slate-300 max-w-md">
@@ -111,7 +111,7 @@ export const AboutView: React.FC<AboutViewProps> = ({
           {updateStatus === 'up-to-date' && (
             <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>You're running the latest version (v{appInfo?.version || '1.4.2'})</span>
+              <span>You're running the latest version (v{appInfo?.version || '1.5.0'})</span>
             </div>
           )}
 

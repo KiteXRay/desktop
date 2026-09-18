@@ -258,4 +258,29 @@ func TestSaveFile_WindowGeometryAndHotkeys(t *testing.T) {
 	assert.True(t, geom3.Maximized)
 }
 
+func TestSaveFile_AutostartAndAutoconnect(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "connections.json")
 
+	sf1 := NewSaveFileWithPath(cfgPath)
+	assert.False(t, sf1.GetRunOnStartup())
+	assert.False(t, sf1.GetAutoConnect())
+	assert.Empty(t, sf1.GetLastConnectedID())
+
+	sf1.SetRunOnStartup(true)
+	sf1.SetAutoConnect(true)
+	sf1.SetLastConnectedID("conn-xyz-123")
+	sf1.SaveWindowAndSettings()
+
+	data, err := os.ReadFile(cfgPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"runOnStartup": true`)
+	assert.Contains(t, string(data), `"autoConnectOnStartup": true`)
+	assert.Contains(t, string(data), `"lastConnectedId": "conn-xyz-123"`)
+
+	sf2 := NewSaveFileWithPath(cfgPath)
+	sf2.Load(connlist.New())
+	assert.True(t, sf2.GetRunOnStartup())
+	assert.True(t, sf2.GetAutoConnect())
+	assert.Equal(t, "conn-xyz-123", sf2.GetLastConnectedID())
+}

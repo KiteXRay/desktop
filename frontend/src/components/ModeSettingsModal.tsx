@@ -12,6 +12,9 @@ import {
   AlertCircle,
   Terminal,
   ShieldCheck,
+  Sliders,
+  Power,
+  Zap,
 } from 'lucide-react';
 import { api } from '../api/wails';
 import type { ProxyEndpointsDTO } from '../types';
@@ -19,7 +22,7 @@ import { BridgeView } from './BridgeView';
 
 interface ModeSettingsModalProps {
   isOpen: boolean;
-  initialTab?: 'tunnel' | 'proxy' | 'bridge';
+  initialTab?: 'general' | 'tunnel' | 'proxy' | 'bridge';
   onClose: () => void;
   onResetTun?: () => Promise<void>;
   isResettingTun?: boolean;
@@ -31,7 +34,7 @@ interface ModeSettingsModalProps {
 
 export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
   isOpen,
-  initialTab = 'tunnel',
+  initialTab = 'general',
   onClose,
   onResetTun,
   isResettingTun = false,
@@ -40,7 +43,12 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
   onConnect,
   showToast,
 }) => {
-  const [activeTab, setActiveTab] = useState<'tunnel' | 'proxy' | 'bridge'>('tunnel');
+  const [activeTab, setActiveTab] = useState<'general' | 'tunnel' | 'proxy' | 'bridge'>(initialTab);
+
+  // General state
+  const [runOnStartup, setRunOnStartup] = useState(false);
+  const [autoConnectOnStartup, setAutoConnectOnStartup] = useState(false);
+  const [generalLoading, setGeneralLoading] = useState(false);
 
   // Tunnel state
   const [deviceIP, setDeviceIP] = useState('192.18.0.1');
@@ -69,6 +77,19 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
       setActiveTab(initialTab);
     }
 
+    // Load General settings
+    api.getGeneralSettings()
+      .then((settings) => {
+        setRunOnStartup(settings.runOnStartup);
+        setAutoConnectOnStartup(settings.autoConnectOnStartup);
+      })
+      .catch((err) => console.error('Failed to load general settings:', err));
+
+    const unsubGeneral = api.onGeneralSettingsChanged((settings) => {
+      setRunOnStartup(settings.runOnStartup);
+      setAutoConnectOnStartup(settings.autoConnectOnStartup);
+    });
+
     // Load Tunnel settings
     api.getTunnelSettings()
       .then((settings) => {
@@ -95,6 +116,7 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
     setTunnelSaved(false);
 
     return () => {
+      unsubGeneral();
       unsubTunnel();
     };
   }, [isOpen, initialTab]);
@@ -151,6 +173,42 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
     }
   };
 
+  const handleToggleRunOnStartup = async () => {
+    if (generalLoading) return;
+    const nextState = !runOnStartup;
+    setGeneralLoading(true);
+    try {
+      await api.setRunOnStartup(nextState);
+      setRunOnStartup(nextState);
+      showToast?.(
+        nextState ? 'App will start on system boot' : 'Autostart on system boot disabled',
+        'success'
+      );
+    } catch (err: any) {
+      showToast?.(`Failed to update startup setting: ${err?.message || err}`, 'error');
+    } finally {
+      setGeneralLoading(false);
+    }
+  };
+
+  const handleToggleAutoConnect = async () => {
+    if (generalLoading) return;
+    const nextState = !autoConnectOnStartup;
+    setGeneralLoading(true);
+    try {
+      await api.setAutoConnectOnStartup(nextState);
+      setAutoConnectOnStartup(nextState);
+      showToast?.(
+        nextState ? 'Autoconnect on launch enabled' : 'Autoconnect on launch disabled',
+        'success'
+      );
+    } catch (err: any) {
+      showToast?.(`Failed to update autoconnect setting: ${err?.message || err}`, 'error');
+    } finally {
+      setGeneralLoading(false);
+    }
+  };
+
   const handleToggleSystemProxy = async () => {
     const nextState = !systemProxyEnabled;
     setProxyLoading(true);
@@ -195,10 +253,10 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
               </div>
               <div className="min-w-0">
                 <h2 className="text-sm sm:text-base font-bold text-slate-100 truncate">
-                  Routing Mode Settings
+                  Settings
                 </h2>
                 <p className="text-[11px] sm:text-xs text-slate-400 truncate">
-                  Configure parameters for Tunnel, Proxy, and Bridge modes
+                  Configure preferences, startup options, and routing modes
                 </p>
               </div>
             </div>
@@ -214,6 +272,19 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
 
           {/* 4-tab segmented control */}
           <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto no-scrollbar max-w-full w-full">
+            <button
+              type="button"
+              onClick={() => setActiveTab('general')}
+              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap flex-1 ${
+                activeTab === 'general'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5 shrink-0" />
+              <span>General</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setActiveTab('tunnel')}
@@ -257,6 +328,121 @@ export const ModeSettingsModal: React.FC<ModeSettingsModalProps> = ({
 
         {/* Modal Body */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
+          {/* TAB 0: GENERAL */}
+          {activeTab === 'general' && (
+            <div className="space-y-6 max-w-2xl mx-auto animate-in fade-in duration-150">
+              <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Sliders className="w-4 h-4 text-indigo-400" />
+                  <h3 className="text-sm font-bold text-slate-100">General Preferences</h3>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Configure whether Kite starts automatically when your system boots, and whether it connects to a VPN profile on app launch.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {/* 1st check: Run on system startup */}
+                <div
+                  onClick={generalLoading ? undefined : handleToggleRunOnStartup}
+                  className={`flex items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition-all cursor-pointer group select-none ${
+                    generalLoading ? 'opacity-70 pointer-events-none' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 transition-all ${
+                      runOnStartup
+                        ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400'
+                        : 'bg-slate-800/80 border-slate-700 text-slate-400 group-hover:text-slate-300'
+                    }`}>
+                      <Power className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-100">Run on system startup</span>
+                        <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border ${
+                          runOnStartup
+                            ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                            : 'bg-slate-800 text-slate-400 border-slate-700'
+                        }`}>
+                          {runOnStartup ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Automatically launch Kite in the background when logging into your desktop
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 flex items-center">
+                    <div
+                      className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${
+                        runOnStartup
+                          ? 'bg-indigo-600 border-indigo-500 text-white'
+                          : 'border-slate-700 bg-slate-800/60'
+                      }`}
+                    >
+                      {generalLoading ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-300" />
+                      ) : (
+                        runOnStartup && <Check className="w-3.5 h-3.5" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2nd check: Autoconnect on launch */}
+                <div
+                  onClick={generalLoading ? undefined : handleToggleAutoConnect}
+                  className={`flex items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition-all cursor-pointer group select-none ${
+                    generalLoading ? 'opacity-70 pointer-events-none' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 transition-all ${
+                      autoConnectOnStartup
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                        : 'bg-slate-800/80 border-slate-700 text-slate-400 group-hover:text-slate-300'
+                    }`}>
+                      <Zap className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-100">Autoconnect on launch</span>
+                        <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border ${
+                          autoConnectOnStartup
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                            : 'bg-slate-800 text-slate-400 border-slate-700'
+                        }`}>
+                          {autoConnectOnStartup ? 'Active' : 'Disabled'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Automatically establish VPN connection whenever Kite starts {activeLabel ? `(target: "${activeLabel}")` : '(target: last used profile)'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 flex items-center">
+                    <div
+                      className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${
+                        autoConnectOnStartup
+                          ? 'bg-emerald-600 border-emerald-500 text-white'
+                          : 'border-slate-700 bg-slate-800/60'
+                      }`}
+                    >
+                      {generalLoading ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-300" />
+                      ) : (
+                        autoConnectOnStartup && <Check className="w-3.5 h-3.5" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB 1: TUNNEL */}
           {activeTab === 'tunnel' && (
             <div className="space-y-6 max-w-2xl mx-auto animate-in fade-in duration-150">

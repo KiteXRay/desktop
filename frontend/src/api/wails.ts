@@ -1,4 +1,6 @@
-import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO, PingResultDTO, Subscription, BridgeGroup, BridgeRule, AddResultDTO, TunnelSettingsDTO } from '../types';
+import type { ConnectionDTO, StatsDTO, AppInfoDTO, ConnectionStatusEvent, ProxyEndpointsDTO, InstalledApp, ReleaseInfo, UpdateProgress, NetworkPrivilegesDTO, PingResultDTO, Subscription, BridgeGroup, BridgeRule, AddResultDTO, TunnelSettingsDTO, GeneralSettingsDTO } from '../types';
+import * as WailsApp from '../../bindings/github.com/KiteXRay/desktop/app.js';
+import { Events as WailsEvents } from '@wailsio/runtime';
 
 declare global {
   interface Window {
@@ -25,6 +27,9 @@ declare global {
           SetTunnelMode(mode: string): Promise<void>;
           GetTunnelSettings(): Promise<TunnelSettingsDTO>;
           SetTunnelSettings(deviceIP: string, dns: string): Promise<void>;
+          GetGeneralSettings(): Promise<GeneralSettingsDTO>;
+          SetRunOnStartup(enabled: boolean): Promise<void>;
+          SetAutoConnectOnStartup(enabled: boolean): Promise<void>;
           AddConnectionOrSubscription(input: string, label: string): Promise<import('../types').AddResultDTO>;
           GetSubscriptions(): Promise<import('../types').Subscription[]>;
           UpdateSubscription(id: string): Promise<void>;
@@ -56,6 +61,21 @@ declare global {
       };
     };
 
+    wails?: {
+      Events?: {
+        On(eventName: string, callback: (event: any) => void): () => void;
+        Off(eventName: string, ...additionalEvents: string[]): void;
+      };
+      Window?: {
+        Minimise(): void;
+        ToggleMaximise(): void;
+        Close(): void;
+      };
+      main?: {
+        App?: NonNullable<NonNullable<NonNullable<Window['go']>['main']>['App']>;
+      };
+    };
+
     runtime?: {
       EventsOn(eventName: string, callback: (...args: any[]) => void): () => void;
       EventsOff(eventName: string, ...additionalEvents: string[]): void;
@@ -67,7 +87,42 @@ declare global {
   }
 }
 
-const getApp = () => window.go?.main?.App;
+const getApp = () => {
+  if (WailsApp && typeof (WailsApp as any).GetConnections === 'function') {
+    return WailsApp as any;
+  }
+  return window.go?.main?.App || window.wails?.main?.App;
+};
+
+function onEvent<T = any>(eventName: string, callback: (data: T) => void): () => void {
+  try {
+    if (typeof WailsEvents?.On === 'function') {
+      return WailsEvents.On(eventName, (event: any) => {
+        callback(event && typeof event === 'object' && 'data' in event ? event.data : event);
+      });
+    }
+  } catch {
+    // fallback
+  }
+
+  if (window.wails?.Events?.On) {
+    return window.wails.Events.On(eventName, (event: any) => {
+      callback(event && typeof event === 'object' && 'data' in event ? event.data : event);
+    });
+  }
+  if (window.runtime?.EventsOn) {
+    return window.runtime.EventsOn(eventName, callback);
+  }
+  const customHandler = (e: any) => {
+    callback(e.detail !== undefined ? e.detail : e);
+  };
+  window.addEventListener(eventName, customHandler);
+  window.addEventListener(`wails:event:${eventName}`, customHandler);
+  return () => {
+    window.removeEventListener(eventName, customHandler);
+    window.removeEventListener(`wails:event:${eventName}`, customHandler);
+  };
+}
 
 export const api = {
   async getConnections(): Promise<ConnectionDTO[]> {
@@ -147,7 +202,7 @@ export const api = {
     if (app) return app.GetAppInfo();
     return {
       name: 'Kite',
-      version: '1.4.2',
+      version: '1.5.0',
       repoUrl: 'https://github.com/KiteXRay/desktop',
       os: 'linux',
       arch: 'amd64',
@@ -347,59 +402,35 @@ export const api = {
   },
 
   onModeChanged(callback: (mode: string) => void): () => void {
-    if (window.runtime?.EventsOn) {
-      return window.runtime.EventsOn('mode:changed', callback);
-    }
-    return () => {};
+    return onEvent('mode:changed', callback);
   },
 
   onTunnelSettingsChanged(callback: (settings: TunnelSettingsDTO) => void): () => void {
-    if (window.runtime?.EventsOn) {
-      return window.runtime.EventsOn('tunnel:settings_changed', callback);
-    }
-    return () => {};
+    return onEvent('tunnel:settings_changed', callback);
   },
 
   onStatsTick(callback: (stats: StatsDTO) => void): () => void {
-    if (window.runtime?.EventsOn) {
-      return window.runtime.EventsOn('stats:tick', callback);
-    }
-    return () => {};
+    return onEvent('stats:tick', callback);
   },
 
   onConnectionsChanged(callback: (connections: ConnectionDTO[]) => void): () => void {
-    if (window.runtime?.EventsOn) {
-      return window.runtime.EventsOn('connections:changed', callback);
-    }
-    return () => {};
+    return onEvent('connections:changed', callback);
   },
 
   onConnectionStatus(callback: (event: ConnectionStatusEvent) => void): () => void {
-    if (window.runtime?.EventsOn) {
-      return window.runtime.EventsOn('connection:status', callback);
-    }
-    return () => {};
+    return onEvent('connection:status', callback);
   },
 
   onProxyStatusChanged(callback: (active: boolean) => void): () => void {
-    if (window.runtime?.EventsOn) {
-      return window.runtime.EventsOn('proxy:status', callback);
-    }
-    return () => {};
+    return onEvent('proxy:status', callback);
   },
 
   onBridgeGroupsChanged(callback: (groups: BridgeGroup[]) => void): () => void {
-    if (window.runtime?.EventsOn) {
-      return window.runtime.EventsOn('bridge:groups_changed', callback);
-    }
-    return () => {};
+    return onEvent('bridge:groups_changed', callback);
   },
 
   onBridgeRulesChanged(callback: (rules: BridgeRule[]) => void): () => void {
-    if (window.runtime?.EventsOn) {
-      return window.runtime.EventsOn('bridge:rules_changed', callback);
-    }
-    return () => {};
+    return onEvent('bridge:rules_changed', callback);
   },
 
   async checkForUpdate(): Promise<ReleaseInfo | null> {
@@ -426,10 +457,7 @@ export const api = {
   },
 
   onUpdateProgress(callback: (progress: UpdateProgress) => void): () => void {
-    if (window.runtime?.EventsOn) {
-      return window.runtime.EventsOn('update:progress', callback);
-    }
-    return () => {};
+    return onEvent('update:progress', callback);
   },
 
   async checkNetworkPrivileges(): Promise<NetworkPrivilegesDTO | null> {
@@ -449,10 +477,7 @@ export const api = {
   },
 
   onNetworkPrivilegesRequired(callback: (data: { error: string; command: string }) => void): () => void {
-    if (window.runtime?.EventsOn) {
-      return window.runtime.EventsOn('network:privileges_required', callback);
-    }
-    return () => {};
+    return onEvent('network:privileges_required', callback);
   },
 
   async pingConnection(id: string): Promise<number> {
@@ -472,17 +497,11 @@ export const api = {
   },
 
   onPingResult(callback: (res: PingResultDTO) => void): () => void {
-    if (window.runtime?.EventsOn) {
-      return window.runtime.EventsOn('ping:result', callback);
-    }
-    return () => {};
+    return onEvent('ping:result', callback);
   },
 
   onPingStart(callback: (id: string) => void): () => void {
-    if (window.runtime?.EventsOn) {
-      return window.runtime.EventsOn('ping:start', callback);
-    }
-    return () => {};
+    return onEvent('ping:start', callback);
   },
 
   async getCompactMode(): Promise<boolean> {
@@ -522,10 +541,50 @@ export const api = {
   },
 
   onCompactModeChanged(callback: (compact: boolean) => void): () => void {
-    if (window.runtime?.EventsOn) {
-      return window.runtime.EventsOn('compact_mode:changed', callback);
+    return onEvent('compact_mode:changed', callback);
+  },
+
+  async getGeneralSettings(): Promise<GeneralSettingsDTO> {
+    const app = getApp();
+    if (app?.GetGeneralSettings) {
+      try {
+        const res = await app.GetGeneralSettings();
+        if (res) {
+          return {
+            runOnStartup: Boolean(res.runOnStartup ?? (res as any).RunOnStartup),
+            autoConnectOnStartup: Boolean(res.autoConnectOnStartup ?? (res as any).AutoConnectOnStartup),
+          };
+        }
+      } catch (err) {
+        console.error('Failed to get general settings:', err);
+      }
     }
-    return () => {};
+    return { runOnStartup: false, autoConnectOnStartup: false };
+  },
+
+  async setRunOnStartup(enabled: boolean): Promise<void> {
+    const app = getApp();
+    if (app?.SetRunOnStartup) {
+      return app.SetRunOnStartup(enabled);
+    }
+  },
+
+  async setAutoConnectOnStartup(enabled: boolean): Promise<void> {
+    const app = getApp();
+    if (app?.SetAutoConnectOnStartup) {
+      return app.SetAutoConnectOnStartup(enabled);
+    }
+  },
+
+  onGeneralSettingsChanged(callback: (settings: GeneralSettingsDTO) => void): () => void {
+    return onEvent('settings:general_changed', (res: any) => {
+      if (res) {
+        callback({
+          runOnStartup: Boolean(res.runOnStartup ?? res.RunOnStartup),
+          autoConnectOnStartup: Boolean(res.autoConnectOnStartup ?? res.AutoConnectOnStartup),
+        });
+      }
+    });
   }
 };
 

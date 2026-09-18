@@ -14,11 +14,19 @@ ARCH="${2:-amd64}"
 
 if [ -f "$ROOT_DIR/build/bin/Kite" ] && [ ! -f "$ROOT_DIR/build/bin/kite" ]; then
     cp "$ROOT_DIR/build/bin/Kite" "$ROOT_DIR/build/bin/kite"
+elif [ -f "$ROOT_DIR/build/bin/kite" ] && [ ! -f "$ROOT_DIR/build/bin/Kite" ]; then
+    cp "$ROOT_DIR/build/bin/kite" "$ROOT_DIR/build/bin/Kite"
 fi
 
-KITE_BIN="$ROOT_DIR/build/bin/kite"
-if [ ! -f "$KITE_BIN" ]; then
-    echo "Error: $KITE_BIN not found. Run 'wails build -tags webkit2_41' first." >&2
+KITE_BIN=""
+if [ -f "$ROOT_DIR/build/bin/Kite" ]; then
+    KITE_BIN="$ROOT_DIR/build/bin/Kite"
+elif [ -f "$ROOT_DIR/build/bin/kite" ]; then
+    KITE_BIN="$ROOT_DIR/build/bin/kite"
+fi
+
+if [ -z "$KITE_BIN" ]; then
+    echo "Error: Kite binary not found in $ROOT_DIR/build/bin. Run 'wails3 task build' first." >&2
     exit 1
 fi
 
@@ -77,7 +85,7 @@ Version: $VERSION
 Section: net
 Priority: optional
 Architecture: $ARCH
-Depends: libgtk-3-0, libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37, libcap2-bin
+Depends: libgtk-4-1 | libgtk-3-0, libwebkitgtk-6.0-4 | libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37, libcap2-bin
 Maintainer: KiteXRay <https://github.com/KiteXRay/desktop>
 Description: Fast, minimal, and transparent desktop VPN client
  Kite provides transparent system-wide and per-application tunneling
